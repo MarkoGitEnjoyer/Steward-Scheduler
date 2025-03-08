@@ -1,0 +1,260 @@
+﻿@page "/generate-schedule"
+@using Scheduler.Core.Services
+@using Scheduler.Core.Models
+@inject ISchedulingService SchedulingService
+@inject NavigationManager NavigationManager
+
+<PageTitle>Generate Schedule - Scheduler Steward</PageTitle>
+
+<h1>Generate Weekly Schedule</h1>
+
+<div class="row mt-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">Schedule Generation Parameters</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label for="weekSelector" class="form-label">Select Week:</label>
+                    <input type="date" class="form-control" id="weekSelector" @bind="selectedDate" />
+                    <small class="form-text text-muted">
+                        The schedule will be generated starting from the Monday of the selected week.
+                    </small>
+                </div>
+
+                <div class="mb-3">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="overrideExisting" @bind="overrideExisting">
+                        <label class="form-check-label" for="overrideExisting">
+                            Override existing schedule (if any)
+                        </label>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label for="algorithmSettings" class="form-label">Algorithm Settings:</label>
+                    <select class="form-select" id="algorithmSettings" @bind="algorithmPreset">
+                        <option value="balanced">Balanced (Default)</option>
+                        <option value="experience">Experience Focused</option>
+                        <option value="feedback">Customer Feedback Focused</option>
+                        <option value="workload">Workload Balance Focused</option>
+                        <option value="language">Language Skills Focused</option>
+                    </select>
+                </div>
+
+                <div class="d-grid gap-2">
+                    <button class="btn btn-primary" @onclick="StartGeneration" disabled="@isGenerating">
+                        @if (isGenerating)
+                        {
+                            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                            <span> Generating Schedule...</span>
+                        }
+                        else
+                        {
+                            <span>Generate Schedule</span>
+                        }
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <div class="alert alert-danger mt-3">
+                <strong>Error:</strong> @errorMessage
+            </div>
+        }
+    </div>
+
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0">Generation Process</h5>
+            </div>
+            <div class="card-body">
+                @if (isGenerating)
+                {
+                    <div class="text-center">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-3">Generating optimal schedule...</p>
+                        <div class="progress mt-2">
+                            <div class="progress-bar progress-bar-striped progress-bar-animated"
+                                 role="progressbar"
+                                 style="width: @generationProgress%"
+                                 aria-valuenow="@generationProgress"
+                                 aria-valuemin="0"
+                                 aria-valuemax="100">
+                                @generationProgress%
+                            </div>
+                        </div>
+                        <p class="text-muted mt-2">Current step: @currentStep</p>
+                    </div>
+                }
+                else if (generationCompleted)
+                {
+                    <div class="text-center">
+                        <div class="alert alert-success">
+                            <h4><i class="oi oi-check"></i> Schedule Generated Successfully!</h4>
+                            <p>The schedule has been generated with a fitness score of @Math.Round(generatedSchedule.FitnessScore * 100, 2)%.</p>
+                        </div>
+
+                        <div class="d-grid gap-2">
+                            <button class="btn btn-success" @onclick="ViewGeneratedSchedule">
+                                View Generated Schedule
+                            </button>
+                        </div>
+
+                        <div class="mt-4">
+                            <h5>Schedule Summary:</h5>
+                            <ul class="list-group">
+                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                    Total Flights
+                                    <span class="badge bg-primary rounded-pill">@generatedSchedule.FlightAssignments.Count</span>
+                                </li>
+                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                    Fully Assigned Flights
+                                    <span class="badge bg-success rounded-pill">@generatedSchedule.FlightAssignments.Count(fa => fa.IsComplete())</span>
+                                </li>
+                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                    Stewards Assigned
+                                    <span class="badge bg-info rounded-pill">@generatedSchedule.StewardSchedules.Count</span>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <div class="text-center">
+                        <i class="oi oi-clock" style="font-size: 3rem;"></i>
+                        <h4 class="mt-3">Ready to Generate Schedule</h4>
+                        <p class="text-muted">
+                            The scheduler will use a genetic algorithm to create an optimized weekly schedule.
+                            This process may take a few minutes depending on the number of flights and stewards.
+                        </p>
+                        <hr />
+                        <div class="text-start">
+                            <h5>How It Works:</h5>
+                            <ol>
+                                <li>Initial schedules are created using priority-based assignment with different weight configurations</li>
+                                <li>The genetic algorithm optimizes the schedule through evolution over multiple generations</li>
+                                <li>The best schedule is selected based on completion rate, workload balance, language matches, and quality matching</li>
+                                <li>The final schedule is saved to the database</li>
+                            </ol>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private DateTime selectedDate = DateTime.Today;
+    private bool overrideExisting = true;
+    private string algorithmPreset = "balanced";
+    private bool isGenerating = false;
+    private bool generationCompleted = false;
+    private int generationProgress = 0;
+    private string currentStep = "";
+    private string errorMessage = "";
+    private WeeklySchedule generatedSchedule;
+    private System.Threading.Timer progressTimer;
+
+    protected override void OnInitialized()
+    {
+        // Ensure selected date is the beginning of a week (Monday)
+        AdjustSelectedDateToMonday();
+    }
+
+    private void AdjustSelectedDateToMonday()
+    {
+        int daysUntilMonday = ((int)selectedDate.DayOfWeek - 1 + 7) % 7;
+        selectedDate = selectedDate.AddDays(-daysUntilMonday);
+    }
+
+    private async Task StartGeneration()
+    {
+        try
+        {
+            isGenerating = true;
+            generationCompleted = false;
+            errorMessage = "";
+            generationProgress = 0;
+            currentStep = "Initializing...";
+
+            // Adjust to Monday of the selected week
+            AdjustSelectedDateToMonday();
+
+            // Start a timer to simulate progress (since we can't get real-time updates from the algorithm)
+            StartProgressSimulation();
+
+            // Call the scheduling service to generate a schedule
+            currentStep = "Generating schedule...";
+            generatedSchedule = await SchedulingService.GenerateWeeklyScheduleAsync(selectedDate);
+
+            // Save the generated schedule
+            currentStep = "Saving schedule to database...";
+            await SchedulingService.SaveScheduleAsync(generatedSchedule);
+
+            // Complete the progress
+            StopProgressSimulation();
+            generationProgress = 100;
+            currentStep = "Schedule generation completed!";
+            generationCompleted = true;
+        }
+        catch (Exception ex)
+        {
+            StopProgressSimulation();
+            errorMessage = $"An error occurred while generating the schedule: {ex.Message}";
+        }
+        finally
+        {
+            isGenerating = false;
+        }
+    }
+
+    private void StartProgressSimulation()
+    {
+        // Use a timer to simulate progress
+        progressTimer = new System.Threading.Timer(UpdateProgress, null, 0, 500);
+    }
+
+    private void StopProgressSimulation()
+    {
+        progressTimer?.Dispose();
+        progressTimer = null;
+    }
+
+    private void UpdateProgress(object state)
+    {
+        // Simulate progressive updates
+        if (generationProgress < 95)
+        {
+            // Randomly increase progress
+            int increment = new Random().Next(1, 5);
+            generationProgress = Math.Min(95, generationProgress + increment);
+
+            // Update the current step based on progress
+            if (generationProgress < 30)
+                currentStep = "Loading flight and steward data...";
+            else if (generationProgress < 50)
+                currentStep = "Creating initial population...";
+            else if (generationProgress < 80)
+                currentStep = "Running genetic algorithm...";
+            else
+                currentStep = "Finalizing optimal schedule...";
+
+            // Force UI update
+            InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void ViewGeneratedSchedule()
+    {
+        NavigationManager.NavigateTo("/view-schedule");
+    }
+}

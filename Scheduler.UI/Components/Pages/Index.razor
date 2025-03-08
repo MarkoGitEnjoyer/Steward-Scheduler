@@ -1,0 +1,269 @@
+﻿@page "/"
+@using Scheduler.Core.Services
+@using Scheduler.Core.Models
+@inject ISchedulingService SchedulingService
+@inject NavigationManager NavigationManager
+
+<PageTitle>Dashboard - Scheduler Steward</PageTitle>
+
+<h1>Flight Crew Scheduler Dashboard</h1>
+
+<div class="row mt-4">
+    <div class="col-md-6 col-lg-3 mb-4">
+        <div class="card text-white bg-primary">
+            <div class="card-body">
+                <h5 class="card-title">This Week's Flights</h5>
+                <p class="card-text display-4">@currentWeekFlights</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6 col-lg-3 mb-4">
+        <div class="card text-white bg-success">
+            <div class="card-body">
+                <h5 class="card-title">Assigned Flights</h5>
+                <p class="card-text display-4">@assignedFlights</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6 col-lg-3 mb-4">
+        <div class="card text-white bg-warning">
+            <div class="card-body">
+                <h5 class="card-title">Unassigned Flights</h5>
+                <p class="card-text display-4">@(currentWeekFlights - assignedFlights)</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6 col-lg-3 mb-4">
+        <div class="card text-white bg-info">
+            <div class="card-body">
+                <h5 class="card-title">Active Stewards</h5>
+                <p class="card-text display-4">@activeStewards</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">Quick Actions</h5>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
+                    <button class="btn btn-primary" @onclick="@(() => NavigationManager.NavigateTo("/generate-schedule"))">
+                        <span class="oi oi-plus"></span> Generate New Schedule
+                    </button>
+                    <button class="btn btn-success" @onclick="@(() => NavigationManager.NavigateTo("/view-schedule"))">
+                        <span class="oi oi-list-rich"></span> View Current Schedule
+                    </button>
+                    <button class="btn btn-info" @onclick="@(() => NavigationManager.NavigateTo("/steward-schedule"))">
+                        <span class="oi oi-person"></span> View Steward Schedule
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0">Current Schedule Status</h5>
+            </div>
+            <div class="card-body">
+                @if (isLoading)
+                {
+                    <p><em>Loading schedule status...</em></p>
+                }
+                else
+                {
+                    <div class="mb-3">
+                        <label class="form-label">Schedule Completion:</label>
+                        <div class="progress">
+                            <div class="progress-bar" role="progressbar"
+                                 style="width: @(scheduleCompletionPercentage)%;"
+                                 aria-valuenow="@scheduleCompletionPercentage"
+                                 aria-valuemin="0"
+                                 aria-valuemax="100">
+                                @scheduleCompletionPercentage%
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Schedule Quality:</label>
+                        <div class="progress">
+                            <div class="progress-bar bg-info" role="progressbar"
+                                 style="width: @(scheduleQualityPercentage)%;"
+                                 aria-valuenow="@scheduleQualityPercentage"
+                                 aria-valuemin="0"
+                                 aria-valuemax="100">
+                                @scheduleQualityPercentage%
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="d-flex justify-content-between">
+                        <small class="text-muted">Week: @currentWeekDisplay</small>
+                        <small class="text-muted">Last Updated: @lastUpdated.ToString("g")</small>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0">Upcoming Flights (Next 24 Hours)</h5>
+            </div>
+            <div class="card-body">
+                @if (isLoading)
+                {
+                    <p><em>Loading upcoming flights...</em></p>
+                }
+                else if (upcomingFlights.Count == 0)
+                {
+                    <p>No upcoming flights in the next 24 hours.</p>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Flight #</th>
+                                    <th>Departure</th>
+                                    <th>Destination</th>
+                                    <th>Aircraft</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var flight in upcomingFlights)
+                                {
+                                    <tr>
+                                        <td>@flight.FlightNumber</td>
+                                        <td>@flight.DepartureTime.ToString("g")</td>
+                                        <td>@flight.Destination</td>
+                                        <td>@flight.AircraftType</td>
+                                        <td>
+                                            @if (IsFlightFullyAssigned(flight))
+                                            {
+                                                <span class="badge bg-success">Ready</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge bg-warning text-dark">Incomplete</span>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private bool isLoading = true;
+    private int currentWeekFlights = 0;
+    private int assignedFlights = 0;
+    private int activeStewards = 0;
+    private int scheduleCompletionPercentage = 0;
+    private int scheduleQualityPercentage = 0;
+    private DateTime lastUpdated = DateTime.Now;
+    private string currentWeekDisplay = "";
+    private WeeklySchedule currentSchedule;
+    private List<FlightDto> upcomingFlights = new List<FlightDto>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDashboardData();
+    }
+
+    private async Task LoadDashboardData()
+    {
+        isLoading = true;
+
+        try
+        {
+            // Get current week's start date (Monday)
+            var today = DateTime.Today;
+            var currentWeekStart = today.AddDays(-(int)today.DayOfWeek + 1);
+            if (currentWeekStart.DayOfWeek == DayOfWeek.Sunday) currentWeekStart = currentWeekStart.AddDays(1);
+
+            currentWeekDisplay = $"{currentWeekStart:MMM dd} - {currentWeekStart.AddDays(6):MMM dd, yyyy}";
+
+            // Load current schedule
+            currentSchedule = await SchedulingService.GetScheduleForWeekAsync(currentWeekStart);
+
+            if (currentSchedule != null)
+            {
+                // Calculate dashboard metrics
+                currentWeekFlights = currentSchedule.FlightAssignments.Count;
+                assignedFlights = currentSchedule.FlightAssignments.Count(fa => fa.IsComplete());
+
+                var allStewardIds = new HashSet<int>();
+                foreach (var fa in currentSchedule.FlightAssignments)
+                {
+                    foreach (var steward in fa.BusinessStewards)
+                        allStewardIds.Add(steward.StewardId);
+
+                    foreach (var steward in fa.EconomyStewards)
+                        allStewardIds.Add(steward.StewardId);
+                }
+
+                activeStewards = allStewardIds.Count;
+
+                // Calculate completion percentage
+                scheduleCompletionPercentage = currentWeekFlights > 0
+                    ? (int)Math.Round((double)assignedFlights / currentWeekFlights * 100)
+                    : 0;
+
+                // Use the fitness score as quality percentage
+                scheduleQualityPercentage = (int)Math.Round(currentSchedule.FitnessScore * 100);
+
+                // Get upcoming flights (next 24 hours)
+                var nextDay = DateTime.Now.AddDays(1);
+                upcomingFlights = currentSchedule.FlightAssignments
+                    .Where(fa => fa.Flight.DepartureTime >= DateTime.Now && fa.Flight.DepartureTime <= nextDay)
+                    .Select(fa => fa.Flight)
+                    .OrderBy(f => f.DepartureTime)
+                    .ToList();
+            }
+            else
+            {
+                // No schedule available
+                currentWeekFlights = 0;
+                assignedFlights = 0;
+                activeStewards = 0;
+                scheduleCompletionPercentage = 0;
+                scheduleQualityPercentage = 0;
+                upcomingFlights = new List<FlightDto>();
+            }
+
+            lastUpdated = DateTime.Now;
+        }
+        catch (Exception)
+        {
+            // Handle errors
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private bool IsFlightFullyAssigned(FlightDto flight)
+    {
+        var assignment = currentSchedule?.FlightAssignments
+            .FirstOrDefault(fa => fa.Flight.FlightId == flight.FlightId);
+
+        return assignment != null && assignment.IsComplete();
+    }
+}

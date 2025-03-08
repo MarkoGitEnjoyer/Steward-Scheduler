@@ -1,0 +1,290 @@
+﻿@using Scheduler.Core.Models
+
+<div class="calendar-view mb-3">
+    <div class="btn-group mb-3">
+        <button class="btn @(currentView == "day" ? "btn-primary" : "btn-outline-primary")" 
+                @onclick="() => currentView = da">
+            Day View
+        </button>
+        <button class="btn @(currentView == "week" ? "btn-primary" : "btn-outline-primary")" 
+                @onclick="() => currentView = mont">
+            Week View
+        </button>
+    </div>
+    
+    @if (currentView == "day")
+    {
+        <div class="week-calendar day-calendar">
+            <div class="day-header">
+                <div class="time-column"></div>
+                @{
+                    var day = Schedule.WeekStart.AddDays(selectedDayIndex);
+                }
+                <div class="day-column">
+                    <h4>@day.ToString("dddd, MMMM d")</h4>
+                </div>
+            </div>
+            
+            <div class="time-slots">
+                @for (int hour = 0; hour < 24; hour++)
+                {
+                    <div class="time-slot">
+                        <div class="time-label">@($"{hour:00}:00")</div>
+                        <div class="day-slot">
+                            @{
+                                var slotStart = new DateTime(day.Year, day.Month, day.Day, hour, 0, 0);
+                                var slotEnd = slotStart.AddHours(1);
+                                
+                                var flightsInSlot = Schedule.FlightAssignments
+                                    .Where(fa => 
+                                        (fa.Flight.DepartureTime >= slotStart && fa.Flight.DepartureTime < slotEnd) ||
+                                        (fa.Flight.DepartureTime < slotStart && fa.Flight.ArrivalTime > slotStart))
+                                    .ToList();
+                                
+                                foreach (var flight in flightsInSlot)
+                                {
+                                    var isStart = flight.Flight.DepartureTime >= slotStart && flight.Flight.DepartureTime < slotEnd;
+                                    var isEnd = flight.Flight.ArrivalTime >= slotStart && flight.Flight.ArrivalTime < slotEnd;
+                                    
+                                    <div class="flight-event @(flight.IsComplete() ? "complete" : "incomplete") @(isStart ? "flight-start" : "")">
+                                        @if (isStart)
+                                        {
+                                            <div class="flight-time">@flight.Flight.DepartureTime.ToString("HH:mm")</div>
+                                            <div class="flight-title">
+                                                <strong>@flight.Flight.FlightNumber</strong> to @flight.Flight.Destination
+                                            </div>
+                                            <div class="flight-details">
+                                                <small>
+                                                    @flight.Flight.AircraftType | 
+                                                    B: @flight.BusinessStewards.Count/@flight.Flight.RequiredBusinessCrew, 
+                                                    E: @flight.EconomyStewards.Count/@flight.Flight.RequiredEconomyCrew
+                                                </small>
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <div class="in-flight-indicator">
+                                                <i class="oi oi-arrow-right"></i> @flight.Flight.FlightNumber in flight
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+        
+        <div class="day-selector mt-3">
+            <div class="btn-group w-100">
+                @for (int i = 0; i < 7; i++)
+                {
+                    var daySc = Schedule.WeekStart.AddDays(i);
+                    var isActive = selectedDayIndex == i;
+                    int index = i; // Capture for lambda
+                    
+                    <button class="btn @(isActive ? "btn-primary" : "btn-outline-primary")"
+                            @onclick="() => selectedDayIndex = index">
+                        @daySc.ToString("ddd")<br />
+                        @daySc.ToString("MMM dd")
+                    </button>
+                }
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="week-calendar">
+            <div class="day-header">
+                <div class="time-column"></div>
+                @for (int i = 0; i < 7; i++)
+                {
+                    var day = Schedule.WeekStart.AddDays(i);
+                    <div class="day-column">
+                        <div class="day-name">@day.ToString("ddd")</div>
+                        <div class="day-date">@day.ToString("MMM dd")</div>
+                    </div>
+                }
+            </div>
+            
+            <div class="time-slots">
+                @for (int hour = 0; hour < 24; hour++)
+                {
+                    <div class="time-slot">
+                        <div class="time-label">@($"{hour:00}:00")</div>
+                        @for (int day = 0; day < 7; day++)
+                        {
+                            <div class="day-slot">
+                                @{
+                                    var currentDay = Schedule.WeekStart.AddDays(day);
+                                    var slotStart = new DateTime(currentDay.Year, currentDay.Month, currentDay.Day, hour, 0, 0);
+                                    var slotEnd = slotStart.AddHours(1);
+                                    
+                                    var flightsInSlot = Schedule.FlightAssignments
+                                        .Where(fa => 
+                                            (fa.Flight.DepartureTime >= slotStart && fa.Flight.DepartureTime < slotEnd) ||
+                                            (fa.Flight.DepartureTime < slotStart && fa.Flight.ArrivalTime > slotStart))
+                                        .ToList();
+                                    
+                                    foreach (var flight in flightsInSlot)
+                                    {
+                                        var isStart = flight.Flight.DepartureTime >= slotStart && flight.Flight.DepartureTime < slotEnd;
+                                        
+                                        <div class="flight-event @(flight.IsComplete() ? "complete" : "incomplete") @(isStart ? "flight-start" : "")">
+                                            @if (isStart)
+                                            {
+                                                <div class="flight-time">@flight.Flight.DepartureTime.ToString("HH:mm")</div>
+                                                <div class="flight-title">@flight.Flight.FlightNumber</div>
+                                                <div class="flight-details">@flight.Flight.Destination</div>
+                                            }
+                                            else
+                                            {
+                                                <div class="in-flight-indicator">
+                                                    <i class="oi oi-arrow-right"></i> @flight.Flight.FlightNumber
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+    .week-calendar {
+        display: flex;
+        flex-direction: column;
+        border: 1px solid #ddd;
+        border-radius: 0.25rem;
+    }
+    
+    .day-header {
+        display: flex;
+        background-color: #f8f9fa;
+        border-bottom: 1px solid #ddd;
+    }
+    
+    .time-column {
+        width: 60px;
+        border-right: 1px solid #ddd;
+    }
+    
+    .day-column {
+        flex: 1;
+        text-align: center;
+        padding: 8px 4px;
+        border-right: 1px solid #ddd;
+    }
+    
+    .day-column:last-child {
+        border-right: none;
+    }
+    
+    .day-name {
+        font-weight: bold;
+    }
+    
+    .day-date {
+        font-size: 0.8rem;
+        color: #6c757d;
+    }
+    
+    .time-slots {
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .time-slot {
+        display: flex;
+        min-height: 60px;
+        border-bottom: 1px solid #eee;
+    }
+    
+    .time-slot:last-child {
+        border-bottom: none;
+    }
+    
+    .time-label {
+        width: 60px;
+        padding: 4px;
+        text-align: center;
+        font-size: 0.8rem;
+        color: #6c757d;
+        border-right: 1px solid #ddd;
+    }
+    
+    .day-slot {
+        flex: 1;
+        padding: 4px;
+        border-right: 1px solid #eee;
+        position: relative;
+    }
+    
+    .day-slot:last-child {
+        border-right: none;
+    }
+    
+    .flight-event {
+        padding: 4px;
+        margin-bottom: 2px;
+        border-radius: 4px;
+        font-size: 0.8rem;
+        overflow: hidden;
+    }
+    
+    .flight-start {
+        border-left: 4px solid #0d6efd;
+    }
+    
+    .complete {
+        background-color: #d1e7dd;
+    }
+    
+    .incomplete {
+        background-color: #fff3cd;
+    }
+    
+    .flight-time {
+        font-weight: bold;
+    }
+    
+    .flight-title {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    
+    .flight-details {
+        font-size: 0.75rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    
+    .in-flight-indicator {
+        font-style: italic;
+        color: #6c757d;
+    }
+    
+    .day-calendar .day-column {
+        flex: 1;
+    }
+</style>
+
+@code {
+    [Parameter]
+    public WeeklySchedule Schedule { get; set; }
+    
+    private string da = "day";
+    private string mont = "month";
+    private string yea = "year";
+
+    private string currentView = "week";
+    private int selectedDayIndex = 0;
+}

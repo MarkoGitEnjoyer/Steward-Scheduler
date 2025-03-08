@@ -1,0 +1,24 @@
+﻿@if (Field == CurrentSort)
+{
+    <span class="sort-indicator">
+        @if (Direction == "asc")
+        {
+            <i class="oi oi-caret-top"></i>
+        }
+        else
+        {
+            <i class="oi oi-caret-bottom"></i>
+        }
+    </span>
+}
+
+@code {
+    [Parameter]
+    public string Field { get; set; }
+
+    [Parameter]
+    public string CurrentSort { get; set; }
+
+    [Parameter]
+    public string Direction { get; set; }
+}
