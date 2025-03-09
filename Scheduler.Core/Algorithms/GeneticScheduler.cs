@@ -231,35 +231,122 @@ namespace Scheduler.Core.Algorithms
             return child;
         }
 
-        // Apply random mutations to a schedule
         private WeeklySchedule Mutate(WeeklySchedule schedule, List<FlightDto> allFlights, List<StewardDto> allStewards)
         {
             // Choose a mutation type
             int mutationType = _random.Next(3);
 
-            switch (mutationType)
+            // Store original schedule to revert if mutation creates an invalid schedule
+            var originalSchedule = schedule.Clone();
+
+            try
             {
-                case 0:
-                    // Swap two stewards between flights
-                    MutateByStewardSwap(schedule);
-                    break;
+                switch (mutationType)
+                {
+                    case 0:
+                        // Swap two stewards between flights
+                        MutateByStewardSwap(schedule);
+                        break;
 
-                case 1:
-                    // Replace a steward with another qualified one not in the schedule
-                    MutateByReplacement(schedule, allStewards);
-                    break;
+                    case 1:
+                        // Replace a steward with another qualified one not in the schedule
+                        MutateByReplacement(schedule, allStewards);
+                        break;
 
-                case 2:
-                    // Add a flight that's not currently in the schedule
-                    MutateByAddingFlight(schedule, allFlights, allStewards);
-                    break;
+                    case 2:
+                        // Add a flight that's not currently in the schedule
+                        MutateByAddingFlight(schedule, allFlights, allStewards);
+                        break;
+                }
+
+                // Rebuild steward schedules
+                RebuildStewardSchedules(schedule);
+
+                // Validate the mutation didn't create an invalid schedule
+                if (IsValidSchedule(schedule, allStewards))
+                {
+                    return schedule;
+                }
+                else
+                {
+                    // If invalid, revert to original schedule
+                    return originalSchedule;
+                }
+            }
+            catch (Exception)
+            {
+                // If any error occurs, revert to original schedule
+                return originalSchedule;
+            }
+        }
+
+        // Verification for validity of schedules
+        private bool IsValidSchedule(WeeklySchedule schedule, List<StewardDto> allStewards)
+        {
+            // Create a dictionary to track monthly hours
+            var stewardHours = allStewards.ToDictionary(s => s.StewardId, s => s.MonthlyHours);
+
+            // Add hours from this schedule
+            foreach (var assignment in schedule.FlightAssignments)
+            {
+                // Check for multiple senior stewards - invalid state
+                if (assignment.BusinessStewards.Count(s => s.IsSenior) > 1)
+                {
+                    return false;
+                }
+
+                foreach (var steward in assignment.BusinessStewards.Concat(assignment.EconomyStewards))
+                {
+                    if (!stewardHours.ContainsKey(steward.StewardId))
+                        stewardHours[steward.StewardId] = 0;
+
+                    stewardHours[steward.StewardId] += assignment.Flight.FlightTime;
+
+                    // Check for hours exceeding 90 - invalid state
+                    if (stewardHours[steward.StewardId] > 90)
+                    {
+                        return false;
+                    }
+                }
             }
 
-            // Rebuild steward schedules
-            RebuildStewardSchedules(schedule);
+            // Check return flight pairing consistency
+            var flightPairs = new Dictionary<int, int>();
+            foreach (var assignment in schedule.FlightAssignments)
+            {
+                if (assignment.Flight.ReturnFlightId.HasValue)
+                {
+                    flightPairs[assignment.Flight.FlightId] = assignment.Flight.ReturnFlightId.Value;
+                }
+            }
 
-            return schedule;
+            foreach (var pair in flightPairs)
+            {
+                var flight1 = schedule.FlightAssignments
+                    .FirstOrDefault(fa => fa.Flight.FlightId == pair.Key);
+
+                var flight2 = schedule.FlightAssignments
+                    .FirstOrDefault(fa => fa.Flight.FlightId == pair.Value);
+
+                if (flight1 != null && flight2 != null)
+                {
+                    // Check if crews match for paired flights
+                    var business1 = flight1.BusinessStewards.Select(s => s.StewardId).OrderBy(id => id).ToList();
+                    var business2 = flight2.BusinessStewards.Select(s => s.StewardId).OrderBy(id => id).ToList();
+
+                    var economy1 = flight1.EconomyStewards.Select(s => s.StewardId).OrderBy(id => id).ToList();
+                    var economy2 = flight2.EconomyStewards.Select(s => s.StewardId).OrderBy(id => id).ToList();
+
+                    if (!business1.SequenceEqual(business2) || !economy1.SequenceEqual(economy2))
+                    {
+                        return false;
+                    }
+                }
+            }
+
+            return true;
         }
+
 
         // Swap stewards between flights
         private void MutateByStewardSwap(WeeklySchedule schedule)

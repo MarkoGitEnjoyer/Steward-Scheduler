@@ -73,11 +73,26 @@ namespace Scheduler.Core.Services
                         // Update steward's monthly hours
                         var month = flightAssignment.Flight.DepartureTime.Month;
                         var year = flightAssignment.Flight.DepartureTime.Year;
-                        await _unitOfWork.Stewards.UpdateMonthlyHoursAsync(
-                            steward.StewardId,
-                            year,
-                            month,
-                            flightAssignment.Flight.FlightTime);
+
+                        // Get current hours before update
+                        float currentHours = await _unitOfWork.Stewards.GetMonthlyHoursAsync(
+                            steward.StewardId, year, month);
+
+                        // Verify update won't exceed limit
+                        if (currentHours + flightAssignment.Flight.FlightTime <= 90)
+                        {
+                            await _unitOfWork.Stewards.UpdateMonthlyHoursAsync(
+                                steward.StewardId,
+                                year,
+                                month,
+                                flightAssignment.Flight.FlightTime);
+                        }
+                        else
+                        {
+                            // Log the error and continue - we don't want to save invalid data
+                            // In a real system, we might want to throw an exception here
+                            Console.WriteLine($"Error: Steward {steward.StewardId} would exceed monthly hours limit");
+                        }
                     }
 
                     // Add economy stewards
@@ -94,11 +109,25 @@ namespace Scheduler.Core.Services
                         // Update steward's monthly hours
                         var month = flightAssignment.Flight.DepartureTime.Month;
                         var year = flightAssignment.Flight.DepartureTime.Year;
-                        await _unitOfWork.Stewards.UpdateMonthlyHoursAsync(
-                            steward.StewardId,
-                            year,
-                            month,
-                            flightAssignment.Flight.FlightTime);
+
+                        // Get current hours before update
+                        float currentHours = await _unitOfWork.Stewards.GetMonthlyHoursAsync(
+                            steward.StewardId, year, month);
+
+                        // Verify update won't exceed limit
+                        if (currentHours + flightAssignment.Flight.FlightTime <= 90)
+                        {
+                            await _unitOfWork.Stewards.UpdateMonthlyHoursAsync(
+                                steward.StewardId,
+                                year,
+                                month,
+                                flightAssignment.Flight.FlightTime);
+                        }
+                        else
+                        {
+                            // Log the error and continue
+                            Console.WriteLine($"Error: Steward {steward.StewardId} would exceed monthly hours limit");
+                        }
                     }
                 }
 
@@ -107,8 +136,10 @@ namespace Scheduler.Core.Services
 
                 return true;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                // Log the exception
+                Console.WriteLine($"Error saving schedule: {ex.Message}");
                 return false;
             }
         }

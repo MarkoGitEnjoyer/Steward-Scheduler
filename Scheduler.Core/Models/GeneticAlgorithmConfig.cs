@@ -8,10 +8,10 @@ namespace Scheduler.Core.Models
 {
     public class GeneticAlgorithmConfig
     {
-        public int PopulationSize { get; set; } = 20;
-        public int MaxGenerations { get; set; } = 100;
-        public float MutationRate { get; set; } = 0.1f;
+        public int PopulationSize { get; set; } = 100;
+        public int MaxGenerations { get; set; } = 400;
+        public float MutationRate { get; set; } = 0.2f;
         public float CrossoverRate { get; set; } = 0.8f;
-        public float ElitismRate { get; set; } = 0.1f; // Top percentage to keep unchanged
+        public float ElitismRate { get; set; } = 0.05f; // Top percentage to keep unchanged
     }
 }
