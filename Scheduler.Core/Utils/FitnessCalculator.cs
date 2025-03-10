@@ -313,9 +313,8 @@ namespace Scheduler.Core.Utils
 
             // Check hard constraints first - if any is violated, return 0
 
-            // Check if steward has license for the aircraft
-            bool hasLicense = true; // This should check license against aircraft type
-            if (!hasLicense)
+            // Check if steward has license for the aircraft (NEW)
+            if (!steward.HasLicenseForAircraft(flight.AircraftType))
                 return 0;
 
             // Check if steward is available during flight time (considering rest periods)

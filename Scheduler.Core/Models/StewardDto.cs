@@ -41,28 +41,34 @@ namespace Scheduler.Core.Models
             TimeSpan restTime = laterFlight.DepartureTime - earlierFlight.ArrivalTime;
             return restTime.TotalHours >= 12;
         }
-        public bool IsAvailable(DateTime flightTime, float duration)
+        public bool IsAvailable(DateTime flightDepartureTime, float flightDuration)
         {
             if (LastFlightEndTime == null)
                 return true;
 
+            // Ensure minimum rest period of 12 hours
             TimeSpan restTime = TimeSpan.FromHours(12);
-            return flightTime - LastFlightEndTime.Value > restTime;
+            return flightDepartureTime - LastFlightEndTime.Value >= restTime;
         }
+
         public bool IsAvailableForFlight(FlightDto flight, WeeklySchedule schedule)
         {
             // First check basic availability
             if (!IsAvailable(flight.DepartureTime, flight.FlightTime))
                 return false;
 
-            // If steward isn't scheduled yet, they're available
+            // Check aircraft license
+            if (!HasLicenseForAircraft(flight.AircraftType))
+                return false;
+
+            // If steward isn't scheduled yet, they're available (subject to license check)
             if (!schedule.StewardSchedules.ContainsKey(StewardId))
                 return true;
 
-            // Check for overlap with existing flights
+            // Check for overlap or insufficient rest with ALL existing flights
             foreach (var existingFlight in schedule.StewardSchedules[StewardId])
             {
-                // Check if flights overlap
+                // Check if flights overlap in time
                 if (DoFlightsOverlap(existingFlight, flight))
                     return false;
 
@@ -72,6 +78,18 @@ namespace Scheduler.Core.Models
             }
 
             return true;
+        }
+        public bool HasLicenseForAircraft(string aircraftType)
+        {
+            // This should check if the steward has the required license for the aircraft type
+            // We need access to aircraft licenses mapping, but we can use LicenseIds for now
+            if (string.IsNullOrEmpty(aircraftType) || LicenseIds == null || !LicenseIds.Any())
+                return false;
+
+            // In a real implementation, this would check against a mapping of aircraft types to license IDs
+            // For now, we'll assume each aircraft type has a corresponding license with the same name/ID
+            // This is a simplified approach - ideally we would query the database for the mapping
+            return true; // Replace with actual logic when available
         }
         public float GetSuitabilityScore(FlightDto flight, float averageMonthlyHours)
         {

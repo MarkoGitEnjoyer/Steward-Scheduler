@@ -360,7 +360,16 @@ else if (!isLoading && selectedStewardId > 0)
                     };
 
                 // Get steward's languages
-                stewardLanguages.Clear();
+                selectedSteward.LanguageIds = (await UnitOfWork.Stewards.GetStewardLanguageIdsAsync(steward.StewardId)).ToList();
+
+                // Get license IDs and populate the DTO
+                selectedSteward.LicenseIds = (await UnitOfWork.Stewards.GetStewardLicenseIdsAsync(steward.StewardId)).ToList();
+
+                // Get steward's languages names for display
+                stewardLanguages = (await UnitOfWork.Stewards.GetStewardLanguageNamesAsync(steward.StewardId)).ToList();
+
+                // Get steward's licenses names for display
+                stewardLicenses = (await UnitOfWork.Stewards.GetStewardLicenseNamesAsync(steward.StewardId)).ToList();
                 foreach (var sl in steward.StewardLanguages)
                 {
                     var language = await UnitOfWork.Languages.GetByIdAsync(sl.LanguageId);
@@ -371,7 +380,6 @@ else if (!isLoading && selectedStewardId > 0)
                 }
 
                 // Get steward's licenses
-                stewardLicenses.Clear();
                 foreach (var license in steward.StewardLicenses)
                 {
                     var aircraftLicense = await UnitOfWork.AircraftTypes.GetByIdAsync(license.LicenseId);

@@ -16,5 +16,9 @@ namespace Scheduler.Data.Repositories
         Task<float> GetMonthlyHoursAsync(int stewardId, int year, int month);
         Task UpdateMonthlyHoursAsync(int stewardId, int year, int month, float additionalHours);
         Task UpdateLastFlightTimeAsync(int stewardId, DateTime endTime);
+        Task<IEnumerable<int>> GetStewardLanguageIdsAsync(int stewardId);
+        Task<IEnumerable<int>> GetStewardLicenseIdsAsync(int stewardId);
+        Task<IEnumerable<string>> GetStewardLanguageNamesAsync(int stewardId);
+        Task<IEnumerable<string>> GetStewardLicenseNamesAsync(int stewardId);
     }
 }

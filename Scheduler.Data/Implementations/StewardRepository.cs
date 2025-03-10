@@ -100,6 +100,43 @@ namespace Scheduler.Data.Implementations
                 steward.LastFlightEndTime = endTime;
             }
         }
+        public async Task<IEnumerable<int>> GetStewardLanguageIdsAsync(int stewardId)
+        {
+            return await _context.StewardLanguages
+                .Where(sl => sl.StewardId == stewardId)
+                .Select(sl => sl.LanguageId)
+                .ToListAsync();
+        }
+
+        public async Task<IEnumerable<int>> GetStewardLicenseIdsAsync(int stewardId)
+        {
+            return await _context.StewardLicenses
+                .Where(sl => sl.StewardId == stewardId)
+                .Select(sl => sl.LicenseId)
+                .ToListAsync();
+        }
+
+        public async Task<IEnumerable<string>> GetStewardLanguageNamesAsync(int stewardId)
+        {
+            return await _context.StewardLanguages
+                .Where(sl => sl.StewardId == stewardId)
+                .Join(_context.Languages,
+                    sl => sl.LanguageId,
+                    l => l.LanguageId,
+                    (sl, l) => l.LanguageName)
+                .ToListAsync();
+        }
+
+        public async Task<IEnumerable<string>> GetStewardLicenseNamesAsync(int stewardId)
+        {
+            return await _context.StewardLicenses
+                .Where(sl => sl.StewardId == stewardId)
+                .Join(_context.AircraftLicenses,
+                    sl => sl.LicenseId,
+                    l => l.LicenseId,
+                    (sl, l) => l.AircraftTypeId)
+                .ToListAsync();
+        }
     }
 
 }
