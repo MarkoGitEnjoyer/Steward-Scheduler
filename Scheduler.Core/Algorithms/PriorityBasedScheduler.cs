@@ -99,19 +99,21 @@ namespace Scheduler.Core.Algorithms
 
                 // Calculate scores for senior stewards with enhanced scoring system
                 var eligibleSeniorStewards = seniorStewards
-                    .Where(s => s.Role == "Business" &&
-                                IsAvailableForFlightPair(s, flight, returnFlight) &&
-                                WillNotExceedHourLimit(s.StewardId, totalFlightTime, stewardWorkingHours))
-                    .Select(s => new
-                    {
-                        Steward = s,
-                        // Use standard fitness calculation with a bonus for underutilized stewards
-                        Score = CalculateStewardScore(s, flight, weights, averageMonthlyHours) +
-                               // Prioritize underutilized stewards
-                               (90 - stewardWorkingHours[s.StewardId]) * 0.5f
-                    })
-                    .OrderByDescending(x => x.Score)
-                    .ToList();
+     .Where(s => s.Role == "Business" &&
+                 IsAvailableForFlightPair(s, flight, returnFlight) &&
+                 WillNotExceedHourLimit(s.StewardId, totalFlightTime, stewardWorkingHours) &&
+                 s.HasLicenseForAircraft(flight.AircraftType)) // Add this line
+     .Select(s => new
+     {
+         Steward = s,
+         // Use standard fitness calculation with a bonus for underutilized stewards
+         Score = CalculateStewardScore(s, flight, weights, averageMonthlyHours) +
+                // Prioritize underutilized stewards
+                (90 - stewardWorkingHours[s.StewardId]) * 0.5f
+     })
+     .OrderByDescending(x => x.Score)
+     .ToList();
+
 
                 // Assign senior steward if available (required for every flight, but only ONE)
                 if (eligibleSeniorStewards.Any())
@@ -151,11 +153,12 @@ namespace Scheduler.Core.Algorithms
                     // Try again with relaxed constraints if we couldn't find a senior steward
                     // This fallback helps increase assignment rates
                     var fallbackSeniors = businessStewards
-                        .Where(s => s.IsSenior &&
-                              WillNotExceedHourLimit(s.StewardId, totalFlightTime, stewardWorkingHours, relaxed: true))
-                        .OrderBy(s => stewardWorkingHours[s.StewardId])
-                        .Take(1)
-                        .ToList();
+     .Where(s => s.IsSenior &&
+           WillNotExceedHourLimit(s.StewardId, totalFlightTime, stewardWorkingHours, relaxed: true) &&
+           s.HasLicenseForAircraft(flight.AircraftType)) // Add this line
+     .OrderBy(s => stewardWorkingHours[s.StewardId])
+     .Take(1)
+     .ToList();
 
                     if (fallbackSeniors.Any())
                     {
@@ -206,38 +209,40 @@ namespace Scheduler.Core.Algorithms
                 {
                     // First try with optimal constraints
                     var availableBusinessStewards = businessStewards
-                        .Where(s => !flightAssignment.BusinessStewards.Any(assignedSteward => assignedSteward.StewardId == s.StewardId) &&
-                                  !s.IsSenior && // Exclude senior stewards - already handled
-                                  IsAvailableForFlightPair(s, flight, returnFlight) &&
-                                  WillNotExceedHourLimit(s.StewardId, totalFlightTime, stewardWorkingHours))
-                        .Select(s => new
-                        {
-                            Steward = s,
-                            // Enhanced scoring with workload balancing
-                            Score = CalculateStewardScore(s, flight, weights, averageMonthlyHours) +
-                                   // Prioritize less utilized stewards
-                                   (90 - stewardWorkingHours[s.StewardId]) * 0.5f
-                        })
-                        .OrderByDescending(x => x.Score)
-                        .Take(remainingBusiness)
-                        .ToList();
+     .Where(s => !flightAssignment.BusinessStewards.Any(assignedSteward => assignedSteward.StewardId == s.StewardId) &&
+               !s.IsSenior && // Exclude senior stewards - already handled
+               IsAvailableForFlightPair(s, flight, returnFlight) &&
+               WillNotExceedHourLimit(s.StewardId, totalFlightTime, stewardWorkingHours) &&
+               s.HasLicenseForAircraft(flight.AircraftType)) // Add this line
+     .Select(s => new
+     {
+         Steward = s,
+         // Enhanced scoring with workload balancing
+         Score = CalculateStewardScore(s, flight, weights, averageMonthlyHours) +
+                // Prioritize less utilized stewards
+                (90 - stewardWorkingHours[s.StewardId]) * 0.5f
+     })
+     .OrderByDescending(x => x.Score)
+     .Take(remainingBusiness)
+     .ToList();
 
                     // If we didn't find enough, try with relaxed constraints
                     if (availableBusinessStewards.Count < remainingBusiness)
                     {
                         var relaxedBusinessStewards = businessStewards
-                            .Where(s => !flightAssignment.BusinessStewards.Any(assignedSteward => assignedSteward.StewardId == s.StewardId) &&
-                                      !s.IsSenior && // Exclude senior stewards - already handled
-                                      WillNotExceedHourLimit(s.StewardId, totalFlightTime, stewardWorkingHours, relaxed: true))
-                            .Select(s => new
-                            {
-                                Steward = s,
-                                Score = CalculateStewardScore(s, flight, weights, averageMonthlyHours) +
-                                      (90 - stewardWorkingHours[s.StewardId]) * 0.5f
-                            })
-                            .OrderByDescending(x => x.Score)
-                            .Take(remainingBusiness - availableBusinessStewards.Count)
-                            .ToList();
+    .Where(s => !flightAssignment.BusinessStewards.Any(assignedSteward => assignedSteward.StewardId == s.StewardId) &&
+              !s.IsSenior && // Exclude senior stewards - already handled
+              WillNotExceedHourLimit(s.StewardId, totalFlightTime, stewardWorkingHours, relaxed: true) &&
+              s.HasLicenseForAircraft(flight.AircraftType)) // Add this line
+    .Select(s => new
+    {
+        Steward = s,
+        Score = CalculateStewardScore(s, flight, weights, averageMonthlyHours) +
+              (90 - stewardWorkingHours[s.StewardId]) * 0.5f
+    })
+    .OrderByDescending(x => x.Score)
+    .Take(remainingBusiness - availableBusinessStewards.Count)
+    .ToList();
 
                         availableBusinessStewards.AddRange(relaxedBusinessStewards);
                     }
@@ -278,36 +283,37 @@ namespace Scheduler.Core.Algorithms
                 // Assign economy class stewards with enhanced selection
                 // First try with standard constraints
                 var availableEconomyStewards = economyStewards
-                    .Where(s => IsAvailableForFlightPair(s, flight, returnFlight) &&
-                              WillNotExceedHourLimit(s.StewardId, totalFlightTime, stewardWorkingHours))
-                    .Select(s => new
-                    {
-                        Steward = s,
-                        // Enhanced scoring
-                        Score = CalculateStewardScore(s, flight, weights, averageMonthlyHours) +
-                              // Prioritize underutilized stewards
-                              (90 - stewardWorkingHours[s.StewardId]) * 0.5f
-                    })
-                    .OrderByDescending(x => x.Score)
-                    .Take(flight.RequiredEconomyCrew)
-                    .ToList();
+     .Where(s => IsAvailableForFlightPair(s, flight, returnFlight) &&
+               WillNotExceedHourLimit(s.StewardId, totalFlightTime, stewardWorkingHours) &&
+               s.HasLicenseForAircraft(flight.AircraftType)) // Add this line
+     .Select(s => new
+     {
+         Steward = s,
+         // Enhanced scoring
+         Score = CalculateStewardScore(s, flight, weights, averageMonthlyHours) +
+               // Prioritize underutilized stewards
+               (90 - stewardWorkingHours[s.StewardId]) * 0.5f
+     })
+     .OrderByDescending(x => x.Score)
+     .Take(flight.RequiredEconomyCrew)
+     .ToList();
 
                 // If we didn't find enough, try with relaxed constraints
                 if (availableEconomyStewards.Count < flight.RequiredEconomyCrew)
                 {
                     var relaxedEconomyStewards = economyStewards
-                        .Where(s => !availableEconomyStewards.Any(existing => existing.Steward.StewardId == s.StewardId) &&
-                                  WillNotExceedHourLimit(s.StewardId, totalFlightTime, stewardWorkingHours, relaxed: true))
-                        .Select(s => new
-                        {
-                            Steward = s,
-                            Score = s.GetSuitabilityScore(flight, averageMonthlyHours) +
-                                   (90 - stewardWorkingHours[s.StewardId]) * 0.5f
-                        })
-                        .OrderByDescending(x => x.Score)
-                        .Take(flight.RequiredEconomyCrew - availableEconomyStewards.Count)
-                        .ToList();
-
+    .Where(s => !availableEconomyStewards.Any(existing => existing.Steward.StewardId == s.StewardId) &&
+              WillNotExceedHourLimit(s.StewardId, totalFlightTime, stewardWorkingHours, relaxed: true) &&
+              s.HasLicenseForAircraft(flight.AircraftType)) // Add this line
+    .Select(s => new
+    {
+        Steward = s,
+        Score = s.GetSuitabilityScore(flight, averageMonthlyHours) +
+               (90 - stewardWorkingHours[s.StewardId]) * 0.5f
+    })
+    .OrderByDescending(x => x.Score)
+    .Take(flight.RequiredEconomyCrew - availableEconomyStewards.Count)
+    .ToList();
                     availableEconomyStewards.AddRange(relaxedEconomyStewards);
                 }
 
@@ -440,27 +446,28 @@ namespace Scheduler.Core.Algorithms
         }
 
         // Helper method to check if we have enough stewards (simplified version)
+        // In Scheduler.Core/Algorithms/PriorityBasedScheduler.cs
+        // Update the HasSufficientCrew method to check licenses:
+
         private bool HasSufficientCrew(FlightDto flight,
-                        List<StewardDto> businessStewards,
-                        List<StewardDto> economyStewards,
-                        List<StewardDto> seniorStewards)
+                            List<StewardDto> businessStewards,
+                            List<StewardDto> economyStewards,
+                            List<StewardDto> seniorStewards)
         {
+            // Filter stewards to those who have license for this aircraft type
+            var licensedBusinessStewards = businessStewards.Where(s => s.HasLicenseForAircraft(flight.AircraftType)).ToList();
+            var licensedEconomyStewards = economyStewards.Where(s => s.HasLicenseForAircraft(flight.AircraftType)).ToList();
+            var licensedSeniorStewards = seniorStewards.Where(s => s.HasLicenseForAircraft(flight.AircraftType)).ToList();
+
             // Check if we have at least the required number of stewards available
-            bool enoughBusiness = businessStewards.Count >= flight.RequiredBusinessCrew;
-            bool enoughEconomy = economyStewards.Count >= flight.RequiredEconomyCrew;
-            bool hasSeniors = seniorStewards.Count >= 1;
+            bool enoughBusiness = licensedBusinessStewards.Count >= flight.RequiredBusinessCrew;
+            bool enoughEconomy = licensedEconomyStewards.Count >= flight.RequiredEconomyCrew;
+            bool hasSeniors = licensedSeniorStewards.Count >= 1;
 
             // Also check if language requirements can be met
-            bool languageRequirementMet = true;
-            if (flight.RequiredLanguageId.HasValue && flight.RequiredLanguageId.Value > 0)
-            {
-                int langId = flight.RequiredLanguageId.Value;
-                languageRequirementMet =
-                    businessStewards.Any(s => s.LanguageIds.Contains(langId)) ||
-                    economyStewards.Any(s => s.LanguageIds.Contains(langId));
-            }
+           
 
-            return enoughBusiness && enoughEconomy && hasSeniors && languageRequirementMet;
+            return enoughBusiness && enoughEconomy && hasSeniors;
         }
 
         // Helper method to check if adding flight hours would exceed the monthly limit

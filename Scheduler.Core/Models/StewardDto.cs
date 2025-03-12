@@ -18,6 +18,8 @@ namespace Scheduler.Core.Models
         public DateTime? LastFlightEndTime { get; set; }
         public float MonthlyHours { get; set; }
         public List<int> LicenseIds { get; set; } = new List<int>();
+        public List<string> LicensedAircraftTypes { get; set; } = new List<string>();
+
         public List<int> LanguageIds { get; set; } = new List<int>();
         public int PositiveFeedbackCount { get; set; }
         public int NegativeFeedbackCount { get; set; }
@@ -79,17 +81,30 @@ namespace Scheduler.Core.Models
 
             return true;
         }
+        // Add this dictionary as a static field to the StewardDto class
+        private static readonly Dictionary<string, int> AircraftLicenseMap = new Dictionary<string, int>
+{
+    { "A321", 1 },
+    { "B777", 2 },
+    { "B737", 3 },
+    { "B747", 4 },
+    { "A350", 5 }
+};
+
         public bool HasLicenseForAircraft(string aircraftType)
         {
-            // This should check if the steward has the required license for the aircraft type
-            // We need access to aircraft licenses mapping, but we can use LicenseIds for now
             if (string.IsNullOrEmpty(aircraftType) || LicenseIds == null || !LicenseIds.Any())
                 return false;
 
-            // In a real implementation, this would check against a mapping of aircraft types to license IDs
-            // For now, we'll assume each aircraft type has a corresponding license with the same name/ID
-            // This is a simplified approach - ideally we would query the database for the mapping
-            return true; // Replace with actual logic when available
+            // Try to get the license ID for this aircraft type from the dictionary
+            if (AircraftLicenseMap.TryGetValue(aircraftType, out int aircraftLicenseId))
+            {
+                // Check if the steward has this license
+                return LicenseIds.Contains(aircraftLicenseId);
+            }
+
+            // Unknown aircraft type
+            return false;
         }
         public float GetSuitabilityScore(FlightDto flight, float averageMonthlyHours)
         {

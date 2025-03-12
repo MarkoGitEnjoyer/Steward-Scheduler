@@ -271,6 +271,9 @@ namespace Scheduler.Core.Services
             return flightDtos;
         }
 
+        // In Scheduler.Core/Services/SchedulingService.cs
+        // Update the GetAllStewardsWithDetailsAsync method to properly load license information
+
         private async Task<List<StewardDto>> GetAllStewardsWithDetailsAsync()
         {
             var stewards = await _unitOfWork.Stewards.GetAllAsync();
@@ -283,7 +286,7 @@ namespace Scheduler.Core.Services
                     StewardId = steward.StewardId,
                     FirstName = steward.FirstName,
                     LastName = steward.LastName,
-                    Role = steward.Role.ToString(), // Use the property accessor that handles the conversion
+                    Role = steward.Role.ToString(),
                     IsSenior = steward.IsSenior,
                     JoiningDate = steward.JoiningDate,
                     LastFlightEndTime = steward.LastFlightEndTime,
@@ -295,18 +298,19 @@ namespace Scheduler.Core.Services
                         DateTime.Now.Month)
                 };
 
-                // Get licenses
-                var licenses = await _unitOfWork.Stewards.FindAsync(s =>
-                    s.StewardId == steward.StewardId);
+                // Get license IDs
+                var licenseIds = await _unitOfWork.Stewards.GetStewardLicenseIdsAsync(steward.StewardId);
+                dto.LicenseIds = licenseIds.ToList();
 
-                dto.LicenseIds = steward.StewardLicenses.Select(sl => sl.LicenseId).ToList();
-
-                // Get languages
-                dto.LanguageIds = steward.StewardLanguages.Select(sl => sl.LanguageId).ToList();
+                // Get language IDs
+                var languageIds = await _unitOfWork.Stewards.GetStewardLanguageIdsAsync(steward.StewardId);
+                dto.LanguageIds = languageIds.ToList();
 
                 // Get feedback counts
-                dto.PositiveFeedbackCount = await _unitOfWork.Feedbacks.GetPositiveFeedbackCountAsync(steward.StewardId);
-                dto.NegativeFeedbackCount = await _unitOfWork.Feedbacks.GetNegativeFeedbackCountAsync(steward.StewardId);
+                var positiveFeedbackCount = await _unitOfWork.Feedbacks.GetPositiveFeedbackCountAsync(steward.StewardId);
+                dto.PositiveFeedbackCount = positiveFeedbackCount;
+                var negativeFeedbackCount = await _unitOfWork.Feedbacks.GetPositiveFeedbackCountAsync(steward.StewardId);
+                dto.NegativeFeedbackCount = negativeFeedbackCount;
 
                 dtos.Add(dto);
             }

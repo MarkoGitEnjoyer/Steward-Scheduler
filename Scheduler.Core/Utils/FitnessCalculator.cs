@@ -37,16 +37,36 @@ namespace Scheduler.Core.Utils
             // Calculate crew pairing consistency (same crew for paired flights)
             float pairingConsistency = CalculatePairingConsistency(schedule);
 
+            // Calculate license compliance rate
+            float licenseComplianceRate = CalculateLicenseComplianceRate(schedule);
+
             // Final fitness is a weighted combination of all factors
-            fitnessScore = 0.35f * completionRate +          // Completion is most important
-                           0.2f * workloadBalance +          // Workload balance
+            fitnessScore = 0.30f * completionRate +          // Completion is most important
+                           0.15f * workloadBalance +          // Workload balance
                            0.15f * languageMatchRate +       // Language matching
                            0.15f * qualityMatchRate +        // Quality matching
-                           0.15f * pairingConsistency;       // Paired flights consistency
+                           0.10f * pairingConsistency +      // Paired flights consistency
+                           0.15f * licenseComplianceRate;    // License compliance
 
             return fitnessScore;
         }
+        private static bool HasLicenseViolations(WeeklySchedule schedule)
+        {
+            foreach (var assignment in schedule.FlightAssignments)
+            {
+                string aircraftType = assignment.Flight.AircraftType;
 
+                // Check business stewards
+                if (assignment.BusinessStewards.Any(s => !s.HasLicenseForAircraft(aircraftType)))
+                    return true;
+
+                // Check economy stewards
+                if (assignment.EconomyStewards.Any(s => !s.HasLicenseForAircraft(aircraftType)))
+                    return true;
+            }
+
+            return false;
+        }
         // Check for critical violations that would make a schedule invalid
         private static bool HasCriticalViolations(WeeklySchedule schedule, List<StewardDto> allStewards)
         {
@@ -62,7 +82,39 @@ namespace Scheduler.Core.Utils
             if (HasRestViolations(schedule))
                 return true;
 
+            // Check for license violations
+            if (HasLicenseViolations(schedule))
+                return true;
+
             return false;
+        }
+        private static float CalculateLicenseComplianceRate(WeeklySchedule schedule)
+        {
+            int totalStewardAssignments = 0;
+            int compliantAssignments = 0;
+
+            foreach (var assignment in schedule.FlightAssignments)
+            {
+                string aircraftType = assignment.Flight.AircraftType;
+
+                // Check business stewards
+                foreach (var steward in assignment.BusinessStewards)
+                {
+                    totalStewardAssignments++;
+                    if (steward.HasLicenseForAircraft(aircraftType))
+                        compliantAssignments++;
+                }
+
+                // Check economy stewards
+                foreach (var steward in assignment.EconomyStewards)
+                {
+                    totalStewardAssignments++;
+                    if (steward.HasLicenseForAircraft(aircraftType))
+                        compliantAssignments++;
+                }
+            }
+
+            return totalStewardAssignments > 0 ? (float)compliantAssignments / totalStewardAssignments : 1.0f;
         }
 
         // Check if any steward exceeds the 90-hour monthly limit

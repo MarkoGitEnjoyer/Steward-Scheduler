@@ -454,9 +454,11 @@ namespace Scheduler.Core.Algorithms
                 var stewardToReplace = nonSeniorStewards[stewardIdx];
 
                 // Find a replacement from all business stewards not in this flight
+                // and who have the proper license for this aircraft type
                 var possibleReplacements = allStewards
                     .Where(s => s.Role == "Business" &&
-                              !flightAssignment.BusinessStewards.Any(bs => bs.StewardId == s.StewardId))
+                              !flightAssignment.BusinessStewards.Any(bs => bs.StewardId == s.StewardId) &&
+                              s.HasLicenseForAircraft(flightAssignment.Flight.AircraftType)) // Add this line
                     .ToList();
 
                 // For senior replacement, we need to ensure the replacement is also senior
@@ -489,9 +491,11 @@ namespace Scheduler.Core.Algorithms
                 var stewardToReplace = flightAssignment.EconomyStewards[stewardIdx];
 
                 // Find a replacement from all economy stewards not in this flight
+                // and who have the proper license for this aircraft type
                 var possibleReplacements = allStewards
                     .Where(s => s.Role == "Economy" &&
-                              !flightAssignment.EconomyStewards.Any(es => es.StewardId == s.StewardId))
+                              !flightAssignment.EconomyStewards.Any(es => es.StewardId == s.StewardId) &&
+                              s.HasLicenseForAircraft(flightAssignment.Flight.AircraftType)) // Add this line
                     .ToList();
 
                 if (possibleReplacements.Count > 0)
@@ -565,10 +569,11 @@ namespace Scheduler.Core.Algorithms
 
             // Find available senior stewards for business class
             var availableSeniors = allStewards
-                .Where(s => s.Role == "Business" && s.IsSenior &&
-                         stewardHours.GetValueOrDefault(s.StewardId, 0) + flightToAdd.FlightTime +
-                            (returnFlightToAdd?.FlightTime ?? 0) <= 90)
-                .ToList();
+     .Where(s => s.Role == "Business" && s.IsSenior &&
+              stewardHours.GetValueOrDefault(s.StewardId, 0) + flightToAdd.FlightTime +
+                 (returnFlightToAdd?.FlightTime ?? 0) <= 90 &&
+              s.HasLicenseForAircraft(flightToAdd.AircraftType)) // Add this line
+     .ToList();
 
             if (!availableSeniors.Any())
                 return; // Can't staff this flight without a senior steward
