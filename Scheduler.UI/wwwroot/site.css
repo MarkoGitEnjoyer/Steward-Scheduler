@@ -1,145 +1,312 @@
-﻿/* Custom styles for Scheduler Steward application */
+﻿/* Add these styles to your app.css file or create a new stylesheet */
 
-/* Main layout */
-.page {
-    position: relative;
-    display: flex;
-    flex-direction: column;
+/* Global styles */
+:root {
+    --primary: #0d6efd;
+    --secondary: #6c757d;
+    --success: #28a745;
+    --warning: #ffc107;
+    --danger: #dc3545;
+    --info: #17a2b8;
+    --light: #f8f9fa;
+    --dark: #343a40;
+    --box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
-.main {
-    flex: 1;
+body {
+    background-color: #f5f8fa;
 }
 
-.sidebar {
-    background-image: linear-gradient(180deg, rgb(5, 39, 103) 0%, #3a0647 70%);
+.content {
+    background-color: #f5f8fa;
 }
 
-.top-row {
-    background-color: #f7f7f7;
-    border-bottom: 1px solid #d6d5d5;
-    justify-content: flex-end;
-    height: 3.5rem;
-    display: flex;
-    align-items: center;
-}
-
-/* Card enhancements */
+/* Card styling */
 .card {
-    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
-    transition: all 0.3s;
+    border: none;
+    border-radius: 0.5rem;
+    box-shadow: var(--box-shadow);
+    overflow: hidden;
+    transition: all 0.3s ease;
 }
 
     .card:hover {
-        box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
     }
 
 .card-header {
-    font-weight: 500;
+    border-bottom: none;
+    padding: 1rem 1.25rem;
 }
 
-/* Dashboard stats */
-.display-4 {
-    font-size: 2.5rem;
-    font-weight: 300;
+/* Button styling */
+.btn {
+    border-radius: 0.375rem;
+    text-transform: none;
+    transition: all 0.2s;
 }
 
-/* Flight status badges */
-.badge.bg-success, .badge.bg-warning {
-    font-weight: 500;
-    padding: 0.35em 0.65em;
+    .btn:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    }
+
+.btn-primary {
+    background-color: var(--primary);
+    border-color: var(--primary);
 }
 
-/* Table styles */
+.btn-outline-primary {
+    color: var(--primary);
+    border-color: var(--primary);
+}
+
+    .btn-outline-primary:hover {
+        background-color: var(--primary);
+        color: white;
+    }
+
+/* Table styling */
+.table {
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
 .table-hover tbody tr:hover {
-    background-color: rgba(0, 123, 255, 0.05);
+    background-color: rgba(13, 110, 253, 0.05);
 }
 
 .table th {
     border-top: none;
-    background-color: #f8f9fa;
+    border-bottom: 2px solid #dee2e6;
+    font-weight: 600;
+    color: var(--secondary);
 }
 
-/* Form elements */
+.table td {
+    vertical-align: middle;
+}
+
+.table-striped tbody tr:nth-of-type(odd) {
+    background-color: rgba(0, 0, 0, 0.02);
+}
+
+/* Badge styling */
+.badge {
+    font-weight: 500;
+    padding: 0.35em 0.65em;
+}
+
+/* Form controls */
+.form-control {
+    border-radius: 0.375rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid #ced4da;
+}
+
+    .form-control:focus {
+        border-color: #86b7fe;
+        box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+    }
+
 .input-group-text {
-    background-color: #f8f9fa;
+    border-radius: 0.375rem;
 }
 
-/* Sort indicators */
-.sort-indicator {
-    margin-left: 0.25rem;
+/* Navigation improvements */
+.nav-link {
+    border-radius: 0.25rem;
+    margin-bottom: 0.25rem;
+    transition: all 0.2s;
 }
 
-/* Calendar view */
-.calendar-view {
-    margin-top: 1rem;
-}
-
-/* Priority stars */
-.oi-star {
-    color: #ffc107;
-}
-
-    .oi-star.text-muted {
-        color: #dee2e6;
+    .nav-link:hover {
+        background-color: rgba(13, 110, 253, 0.1);
     }
 
-/* Modal backdrop */
-.modal-backdrop {
-    opacity: 0.5;
-}
-
-/* Animation for progress bars */
-.progress-bar-animated {
-    animation: progress-bar-stripes 1s linear infinite;
-}
-
-/* Custom scrollbar */
-::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-}
-
-::-webkit-scrollbar-track {
-    background: #f1f1f1;
-}
-
-::-webkit-scrollbar-thumb {
-    background: #888;
-    border-radius: 4px;
-}
-
-    ::-webkit-scrollbar-thumb:hover {
-        background: #555;
+    .nav-link.active {
+        font-weight: 500;
     }
+
+/* Utility classes */
+.shadow-sm {
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075) !important;
+}
+
+.shadow {
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15) !important;
+}
+
+.rounded-lg {
+    border-radius: 0.5rem !important;
+}
+
+/* Page header */
+.page-header {
+    margin-bottom: 1.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid #dee2e6;
+}
+
+.page-title {
+    margin-bottom: 0.25rem;
+    font-weight: 600;
+}
+
+/* Custom Components */
+
+/* Stat cards */
+.stat-card {
+    display: flex;
+    align-items: center;
+    background-color: white;
+    border-radius: 0.5rem;
+    padding: 1.25rem;
+    box-shadow: var(--box-shadow);
+    transition: all 0.3s;
+}
+
+    .stat-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+    }
+
+.stat-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 3rem;
+    height: 3rem;
+    border-radius: 50%;
+    margin-right: 1rem;
+    color: white;
+    font-size: 1.5rem;
+}
+
+.stat-content {
+    flex: 1;
+}
+
+.stat-value {
+    font-size: 1.75rem;
+    font-weight: 700;
+    line-height: 1.2;
+    margin-bottom: 0.25rem;
+}
+
+.stat-label {
+    color: var(--secondary);
+    font-size: 0.875rem;
+}
+
+/* Calendar day buttons */
+.day-button {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 0.625rem 0.5rem;
+    transition: all 0.3s;
+}
+
+    .day-button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+
+    .day-button .day-name {
+        font-size: 1rem;
+        font-weight: 600;
+    }
+
+    .day-button .day-date {
+        font-size: 0.875rem;
+        color: var(--secondary);
+    }
+
+    .day-button .flight-count {
+        font-size: 0.75rem;
+        margin-top: 0.25rem;
+        color: var(--secondary);
+    }
+
+/* Schedule colors */
+.complete {
+    background-color: rgba(40, 167, 69, 0.1);
+    border-left: 3px solid var(--success);
+}
+
+.incomplete {
+    background-color: rgba(255, 193, 7, 0.1);
+    border-left: 3px solid var(--warning);
+}
+
+/* Modal styling */
+.modal-content {
+    border: none;
+    border-radius: 0.5rem;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+}
+
+.modal-header {
+    border-bottom: none;
+    padding: 1.5rem 1.5rem 0.75rem;
+}
+
+.modal-footer {
+    border-top: none;
+    padding: 0.75rem 1.5rem 1.5rem;
+}
+
+/* Animations */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+.fade-in {
+    animation: fadeIn 0.3s ease-in;
+}
+
+@keyframes slideUp {
+    from {
+        transform: translateY(20px);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.slide-up {
+    animation: slideUp 0.4s ease-out;
+}
 
 /* Responsive adjustments */
-@media (max-width: 767.98px) {
-    .display-4 {
-        font-size: 1.8rem;
+@media (max-width: 768px) {
+    .card {
+        margin-bottom: 1rem;
     }
 
-    .day-selector .btn {
-        padding: 0.25rem 0.5rem;
-        font-size: 0.875rem;
-    }
-}
-
-@media (min-width: 641px) {
-    .page {
-        flex-direction: row;
+    .stat-card {
+        margin-bottom: 1rem;
     }
 
-    .sidebar {
-        width: 250px;
-        height: 100vh;
-        position: sticky;
-        top: 0;
+    .day-button {
+        padding: 0.5rem 0.25rem;
     }
 
-    .main .top-row {
-        position: sticky;
-        top: 0;
-        z-index: 1;
-    }
+        .day-button .day-name {
+            font-size: 0.875rem;
+        }
+
+        .day-button .day-date {
+            font-size: 0.75rem;
+        }
 }

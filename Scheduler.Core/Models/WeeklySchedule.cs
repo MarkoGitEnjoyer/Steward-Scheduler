@@ -13,6 +13,8 @@ namespace Scheduler.Core.Models
         public List<FlightAssignment> FlightAssignments { get; set; } = new List<FlightAssignment>();
         public Dictionary<int, List<FlightDto>> StewardSchedules { get; set; } = new Dictionary<int, List<FlightDto>>();
 
+        public int TotalFlightCount { get; set; }
+
         // Fitness score for genetic algorithm
         public float FitnessScore { get; set; }
 

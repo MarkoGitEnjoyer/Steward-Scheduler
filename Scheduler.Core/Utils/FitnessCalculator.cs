@@ -70,23 +70,44 @@ namespace Scheduler.Core.Utils
         // Check for critical violations that would make a schedule invalid
         private static bool HasCriticalViolations(WeeklySchedule schedule, List<StewardDto> allStewards)
         {
-            // Check for monthly hour limit violations
             if (HasHourLimitViolations(schedule, allStewards))
-                return true;
+            {
+                for (int i = 0; i < 10000; i++)
+                {
+                    Console.WriteLine("Hour limit violation detected");
+                    return true;
+                }
+                
+            }
 
-            // Check for multiple senior stewards on flights
             if (HasMultipleSeniorStewardsViolation(schedule))
-                return true;
+            {
+                for (int i = 0; i < 10000; i++)
+                {
+                    Console.WriteLine("Multiple senior stewards violation detected");
+                    return true;
+                }
+                }
 
-            // Check for rest period violations
-            if (HasRestViolations(schedule))
-                return true;
+                if (HasRestViolations(schedule))
+            {
+                for (int i = 0; i < 10000; i++)
+                {
+                    Console.WriteLine("Rest period violation detected");
+                    return true;
+                }
+                }
 
-            // Check for license violations
-            if (HasLicenseViolations(schedule))
-                return true;
+                if (HasLicenseViolations(schedule))
+            {
+                for (int i = 0; i < 10000; i++)
+                {
+                    Console.WriteLine("License violation detected");
+                    return true;
+                }
+                }
 
-            return false;
+                return false;
         }
         private static float CalculateLicenseComplianceRate(WeeklySchedule schedule)
         {

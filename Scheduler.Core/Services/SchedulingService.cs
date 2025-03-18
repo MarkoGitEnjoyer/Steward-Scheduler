@@ -31,6 +31,7 @@ namespace Scheduler.Core.Services
 
             // Get all flights for the week
             var flights = await GetFlightsForWeekAsync(weekStart, weekEnd);
+            int totalFlights = flights.Count;
 
             // Get all stewards
             var stewards = await GetAllStewardsWithDetailsAsync();
@@ -38,7 +39,7 @@ namespace Scheduler.Core.Services
             // Run the genetic scheduler
             var geneticScheduler = new GeneticScheduler();
             var schedule = geneticScheduler.OptimizeSchedule(flights, stewards, weekStart);
-
+            schedule.TotalFlightCount = totalFlights;
             return schedule;
         }
 
@@ -233,8 +234,28 @@ namespace Scheduler.Core.Services
 
         private async Task<List<FlightDto>> GetFlightsForWeekAsync(DateTime weekStart, DateTime weekEnd)
         {
-            var flights = await _unitOfWork.Flights.FindAsync(f =>
+            // First get all flights departing within the week
+            var flightsInWeek = await _unitOfWork.Flights.FindAsync(f =>
                 f.DepartureTime >= weekStart && f.DepartureTime < weekEnd);
+
+            // Create a set to store all flight IDs we need to include
+            var flightIdsToInclude = new HashSet<int>();
+
+            // Add all flights from the week and their return flights
+            foreach (var flight in flightsInWeek)
+            {
+                flightIdsToInclude.Add(flight.FlightId);
+
+                // If this flight has a return flight, include it too
+                if (flight.ReturnFlightId.HasValue)
+                {
+                    flightIdsToInclude.Add(flight.ReturnFlightId.Value);
+                }
+            }
+
+            // Now fetch all flights by these IDs
+            var flights = await _unitOfWork.Flights.FindAsync(f =>
+                flightIdsToInclude.Contains(f.FlightId));
 
             var flightDtos = new List<FlightDto>();
 

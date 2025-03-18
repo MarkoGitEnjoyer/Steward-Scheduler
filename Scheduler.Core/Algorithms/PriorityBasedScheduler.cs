@@ -99,20 +99,18 @@ namespace Scheduler.Core.Algorithms
 
                 // Calculate scores for senior stewards with enhanced scoring system
                 var eligibleSeniorStewards = seniorStewards
-     .Where(s => s.Role == "Business" &&
-                 IsAvailableForFlightPair(s, flight, returnFlight) &&
-                 WillNotExceedHourLimit(s.StewardId, totalFlightTime, stewardWorkingHours) &&
-                 s.HasLicenseForAircraft(flight.AircraftType)) // Add this line
-     .Select(s => new
-     {
-         Steward = s,
-         // Use standard fitness calculation with a bonus for underutilized stewards
-         Score = CalculateStewardScore(s, flight, weights, averageMonthlyHours) +
-                // Prioritize underutilized stewards
-                (90 - stewardWorkingHours[s.StewardId]) * 0.5f
-     })
-     .OrderByDescending(x => x.Score)
-     .ToList();
+    .Where(s => s.Role == "Business" &&
+               IsAvailableForFlightPair(s, flight, returnFlight, schedule) &&
+               WillNotExceedHourLimit(s.StewardId, totalFlightTime, stewardWorkingHours) &&
+               s.HasLicenseForAircraft(flight.AircraftType))
+    .Select(s => new
+    {
+        Steward = s,
+        Score = CalculateStewardScore(s, flight, weights, averageMonthlyHours) +
+               (90 - stewardWorkingHours[s.StewardId]) * 0.5f
+    })
+    .OrderByDescending(x => x.Score)
+    .ToList();
 
 
                 // Assign senior steward if available (required for every flight, but only ONE)
@@ -209,22 +207,21 @@ namespace Scheduler.Core.Algorithms
                 {
                     // First try with optimal constraints
                     var availableBusinessStewards = businessStewards
-     .Where(s => !flightAssignment.BusinessStewards.Any(assignedSteward => assignedSteward.StewardId == s.StewardId) &&
-               !s.IsSenior && // Exclude senior stewards - already handled
-               IsAvailableForFlightPair(s, flight, returnFlight) &&
-               WillNotExceedHourLimit(s.StewardId, totalFlightTime, stewardWorkingHours) &&
-               s.HasLicenseForAircraft(flight.AircraftType)) // Add this line
-     .Select(s => new
-     {
-         Steward = s,
-         // Enhanced scoring with workload balancing
-         Score = CalculateStewardScore(s, flight, weights, averageMonthlyHours) +
-                // Prioritize less utilized stewards
-                (90 - stewardWorkingHours[s.StewardId]) * 0.5f
-     })
-     .OrderByDescending(x => x.Score)
-     .Take(remainingBusiness)
-     .ToList();
+    .Where(s => !flightAssignment.BusinessStewards.Any(assignedSteward => assignedSteward.StewardId == s.StewardId) &&
+              !s.IsSenior && // Exclude senior stewards - already handled
+              IsAvailableForFlightPair(s, flight, returnFlight, schedule) &&
+              WillNotExceedHourLimit(s.StewardId, totalFlightTime, stewardWorkingHours) &&
+              s.HasLicenseForAircraft(flight.AircraftType))
+    .Select(s => new
+    {
+        Steward = s,
+        Score = CalculateStewardScore(s, flight, weights, averageMonthlyHours) +
+               (90 - stewardWorkingHours[s.StewardId]) * 0.5f
+    })
+    .OrderByDescending(x => x.Score)
+    .Take(remainingBusiness)
+    .ToList();
+
 
                     // If we didn't find enough, try with relaxed constraints
                     if (availableBusinessStewards.Count < remainingBusiness)
@@ -232,8 +229,9 @@ namespace Scheduler.Core.Algorithms
                         var relaxedBusinessStewards = businessStewards
     .Where(s => !flightAssignment.BusinessStewards.Any(assignedSteward => assignedSteward.StewardId == s.StewardId) &&
               !s.IsSenior && // Exclude senior stewards - already handled
+              IsAvailableForFlightPair(s, flight, returnFlight, schedule) &&
               WillNotExceedHourLimit(s.StewardId, totalFlightTime, stewardWorkingHours, relaxed: true) &&
-              s.HasLicenseForAircraft(flight.AircraftType)) // Add this line
+              s.HasLicenseForAircraft(flight.AircraftType))
     .Select(s => new
     {
         Steward = s,
@@ -283,28 +281,27 @@ namespace Scheduler.Core.Algorithms
                 // Assign economy class stewards with enhanced selection
                 // First try with standard constraints
                 var availableEconomyStewards = economyStewards
-     .Where(s => IsAvailableForFlightPair(s, flight, returnFlight) &&
-               WillNotExceedHourLimit(s.StewardId, totalFlightTime, stewardWorkingHours) &&
-               s.HasLicenseForAircraft(flight.AircraftType)) // Add this line
-     .Select(s => new
-     {
-         Steward = s,
-         // Enhanced scoring
-         Score = CalculateStewardScore(s, flight, weights, averageMonthlyHours) +
-               // Prioritize underutilized stewards
-               (90 - stewardWorkingHours[s.StewardId]) * 0.5f
-     })
-     .OrderByDescending(x => x.Score)
-     .Take(flight.RequiredEconomyCrew)
-     .ToList();
+    .Where(s => IsAvailableForFlightPair(s, flight, returnFlight, schedule) &&
+              WillNotExceedHourLimit(s.StewardId, totalFlightTime, stewardWorkingHours) &&
+              s.HasLicenseForAircraft(flight.AircraftType))
+    .Select(s => new
+    {
+        Steward = s,
+        Score = CalculateStewardScore(s, flight, weights, averageMonthlyHours) +
+              (90 - stewardWorkingHours[s.StewardId]) * 0.5f
+    })
+    .OrderByDescending(x => x.Score)
+    .Take(flight.RequiredEconomyCrew)
+    .ToList();
 
                 // If we didn't find enough, try with relaxed constraints
                 if (availableEconomyStewards.Count < flight.RequiredEconomyCrew)
                 {
                     var relaxedEconomyStewards = economyStewards
     .Where(s => !availableEconomyStewards.Any(existing => existing.Steward.StewardId == s.StewardId) &&
+              IsAvailableForFlightPair(s, flight, returnFlight, schedule) &&
               WillNotExceedHourLimit(s.StewardId, totalFlightTime, stewardWorkingHours, relaxed: true) &&
-              s.HasLicenseForAircraft(flight.AircraftType)) // Add this line
+              s.HasLicenseForAircraft(flight.AircraftType))
     .Select(s => new
     {
         Steward = s,
@@ -666,6 +663,75 @@ namespace Scheduler.Core.Algorithms
         }
 
         // Fill unassigned flights
+        private bool DoFlightsOverlap(FlightDto flight1, FlightDto flight2)
+        {
+            return (flight1.DepartureTime <= flight2.ArrivalTime &&
+                    flight1.ArrivalTime >= flight2.DepartureTime);
+        }
+
+        private bool HasEnoughRestBetween(FlightDto flight1, FlightDto flight2)
+        {
+            // Determine which flight comes first
+            var earlierFlight = flight1.DepartureTime < flight2.DepartureTime ? flight1 : flight2;
+            var laterFlight = earlierFlight == flight1 ? flight2 : flight1;
+
+            // Check if there's at least 12 hours between the end of the earlier flight
+            // and the start of the later flight
+            TimeSpan restTime = laterFlight.DepartureTime - earlierFlight.ArrivalTime;
+            return restTime.TotalHours >= 12;
+        }
+
+        // STEP 2: Enhance IsAvailableForFlightPair in PriorityBasedScheduler.cs
+        private bool IsAvailableForFlightPair(StewardDto steward, FlightDto flight, FlightDto returnFlight, WeeklySchedule schedule = null)
+        {
+            // Check if steward is available for the outbound flight based on last flight end time
+            if (steward.LastFlightEndTime != null)
+            {
+                TimeSpan restTime = flight.DepartureTime - steward.LastFlightEndTime.Value;
+                if (restTime.TotalHours < 12)
+                    return false;
+            }
+
+            // If there's a return flight, check if there's enough time between flights
+            if (returnFlight != null)
+            {
+                // Check time between flights
+                TimeSpan timeBetweenFlights = returnFlight.DepartureTime - flight.ArrivalTime;
+                if (timeBetweenFlights.TotalHours < 0) // Return flight departs before first flight arrives - error!
+                    return false;
+
+                // Check for direct overlap between the flights
+                if (DoFlightsOverlap(flight, returnFlight))
+                    return false;
+            }
+
+            // Check against all currently assigned flights for this steward in the schedule
+            if (schedule != null && schedule.StewardSchedules.TryGetValue(steward.StewardId, out var existingFlights))
+            {
+                foreach (var existingFlight in existingFlights)
+                {
+                    // Check for overlap with the outbound flight
+                    if (DoFlightsOverlap(existingFlight, flight))
+                        return false;
+
+                    // Check if there's enough rest time
+                    if (!HasEnoughRestBetween(existingFlight, flight))
+                        return false;
+
+                    // If there's a return flight, also check it
+                    if (returnFlight != null)
+                    {
+                        if (DoFlightsOverlap(existingFlight, returnFlight))
+                            return false;
+
+                        if (!HasEnoughRestBetween(existingFlight, returnFlight))
+                            return false;
+                    }
+                }
+            }
+
+            return true;
+        }
         public void FillUnassignedFlights(WeeklySchedule schedule, List<StewardDto> allStewards)
         {
             // 1. Identify unassigned flights in the week
