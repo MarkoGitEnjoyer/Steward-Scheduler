@@ -15,9 +15,7 @@ namespace Scheduler.Core.Utils
             if (schedule.FlightAssignments.Count == 0)
                 return 0;
 
-            // Check if there are critical violations that should drop fitness to zero
-            if (HasCriticalViolations(schedule, allStewards))
-                return 0;
+          
 
             float fitnessScore = 0;
 
@@ -68,47 +66,7 @@ namespace Scheduler.Core.Utils
             return false;
         }
         // Check for critical violations that would make a schedule invalid
-        private static bool HasCriticalViolations(WeeklySchedule schedule, List<StewardDto> allStewards)
-        {
-            if (HasHourLimitViolations(schedule, allStewards))
-            {
-                for (int i = 0; i < 10000; i++)
-                {
-                    Console.WriteLine("Hour limit violation detected");
-                    return true;
-                }
-                
-            }
-
-            if (HasMultipleSeniorStewardsViolation(schedule))
-            {
-                for (int i = 0; i < 10000; i++)
-                {
-                    Console.WriteLine("Multiple senior stewards violation detected");
-                    return true;
-                }
-                }
-
-                if (HasRestViolations(schedule))
-            {
-                for (int i = 0; i < 10000; i++)
-                {
-                    Console.WriteLine("Rest period violation detected");
-                    return true;
-                }
-                }
-
-                if (HasLicenseViolations(schedule))
-            {
-                for (int i = 0; i < 10000; i++)
-                {
-                    Console.WriteLine("License violation detected");
-                    return true;
-                }
-                }
-
-                return false;
-        }
+       
         private static float CalculateLicenseComplianceRate(WeeklySchedule schedule)
         {
             int totalStewardAssignments = 0;
@@ -138,83 +96,9 @@ namespace Scheduler.Core.Utils
             return totalStewardAssignments > 0 ? (float)compliantAssignments / totalStewardAssignments : 1.0f;
         }
 
-        // Check if any steward exceeds the 90-hour monthly limit
-        private static bool HasHourLimitViolations(WeeklySchedule schedule, List<StewardDto> allStewards)
-        {
-            var stewardHours = new Dictionary<int, float>();
+        
 
-            // Initialize with current monthly hours
-            foreach (var steward in allStewards)
-            {
-                stewardHours[steward.StewardId] = steward.MonthlyHours;
-            }
-
-            // Calculate hours from this schedule
-            foreach (var assignment in schedule.FlightAssignments)
-            {
-                foreach (var steward in assignment.BusinessStewards.Concat(assignment.EconomyStewards))
-                {
-                    if (!stewardHours.ContainsKey(steward.StewardId))
-                        stewardHours[steward.StewardId] = 0;
-
-                    stewardHours[steward.StewardId] += assignment.Flight.FlightTime;
-
-                    // If any steward exceeds 90 hours, the schedule is invalid
-                    if (stewardHours[steward.StewardId] > 90)
-                        return true;
-                }
-            }
-
-            return false;
-        }
-
-        // Check if any flight has more than one senior steward
-        private static bool HasMultipleSeniorStewardsViolation(WeeklySchedule schedule)
-        {
-            foreach (var assignment in schedule.FlightAssignments)
-            {
-                if (assignment.BusinessStewards.Count(s => s.IsSenior) > 1)
-                    return true;
-            }
-            return false;
-        }
-
-        // Check if there are any rest period violations
-        private static bool HasRestViolations(WeeklySchedule schedule)
-        {
-            // Create a dictionary of steward ID to their assigned flights
-            var stewardFlights = new Dictionary<int, List<FlightDto>>();
-
-            foreach (var assignment in schedule.FlightAssignments)
-            {
-                foreach (var steward in assignment.BusinessStewards.Concat(assignment.EconomyStewards))
-                {
-                    if (!stewardFlights.ContainsKey(steward.StewardId))
-                        stewardFlights[steward.StewardId] = new List<FlightDto>();
-
-                    stewardFlights[steward.StewardId].Add(assignment.Flight);
-                }
-            }
-
-            // Check each steward's flights for rest period violations
-            foreach (var entry in stewardFlights)
-            {
-                var flights = entry.Value.OrderBy(f => f.DepartureTime).ToList();
-
-                for (int i = 0; i < flights.Count - 1; i++)
-                {
-                    var currentFlight = flights[i];
-                    var nextFlight = flights[i + 1];
-
-                    // Check if there's at least 12 hours between flights
-                    TimeSpan restTime = nextFlight.DepartureTime - currentFlight.ArrivalTime;
-                    if (restTime.TotalHours < 12)
-                        return true;
-                }
-            }
-
-            return false;
-        }
+        
 
         // Calculate how well paired flights maintain the same crew
         private static float CalculatePairingConsistency(WeeklySchedule schedule)
