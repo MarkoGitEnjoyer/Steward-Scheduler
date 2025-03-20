@@ -22,7 +22,43 @@ namespace Scheduler.Core.Models
             // Add default weights
             variations.Add(new SchedulingWeights());
 
-            // Add experience-focused weights
+            // Add experience-focused weights (Heavy focus)
+            variations.Add(new SchedulingWeights
+            {
+                ExperienceWeight = 0.7f,
+                FeedbackWeight = 0.1f,
+                WorkloadBalanceWeight = 0.1f,
+                LanguageWeight = 0.1f
+            });
+
+            // Add feedback-focused weights (Heavy focus)
+            variations.Add(new SchedulingWeights
+            {
+                ExperienceWeight = 0.1f,
+                FeedbackWeight = 0.7f,
+                WorkloadBalanceWeight = 0.1f,
+                LanguageWeight = 0.1f
+            });
+
+            // Add workload-focused weights (Heavy focus)
+            variations.Add(new SchedulingWeights
+            {
+                ExperienceWeight = 0.1f,
+                FeedbackWeight = 0.1f,
+                WorkloadBalanceWeight = 0.7f,
+                LanguageWeight = 0.1f
+            });
+
+            // Add language-focused weights (Heavy focus)
+            variations.Add(new SchedulingWeights
+            {
+                ExperienceWeight = 0.1f,
+                FeedbackWeight = 0.1f,
+                WorkloadBalanceWeight = 0.1f,
+                LanguageWeight = 0.7f
+            });
+
+            // Add moderate experience-focused weights
             variations.Add(new SchedulingWeights
             {
                 ExperienceWeight = 0.4f,
@@ -31,7 +67,7 @@ namespace Scheduler.Core.Models
                 LanguageWeight = 0.2f
             });
 
-            // Add feedback-focused weights
+            // Add moderate feedback-focused weights
             variations.Add(new SchedulingWeights
             {
                 ExperienceWeight = 0.2f,
@@ -40,7 +76,7 @@ namespace Scheduler.Core.Models
                 LanguageWeight = 0.2f
             });
 
-            // Add workload-focused weights
+            // Add moderate workload-focused weights
             variations.Add(new SchedulingWeights
             {
                 ExperienceWeight = 0.2f,
@@ -49,7 +85,7 @@ namespace Scheduler.Core.Models
                 LanguageWeight = 0.2f
             });
 
-            // Add language-focused weights
+            // Add moderate language-focused weights
             variations.Add(new SchedulingWeights
             {
                 ExperienceWeight = 0.2f,
@@ -58,14 +94,39 @@ namespace Scheduler.Core.Models
                 LanguageWeight = 0.4f
             });
 
+            // Add dual-focus configurations
+            variations.Add(new SchedulingWeights
+            {
+                ExperienceWeight = 0.4f,
+                FeedbackWeight = 0.4f,
+                WorkloadBalanceWeight = 0.1f,
+                LanguageWeight = 0.1f
+            });
+
+            variations.Add(new SchedulingWeights
+            {
+                ExperienceWeight = 0.1f,
+                FeedbackWeight = 0.1f,
+                WorkloadBalanceWeight = 0.4f,
+                LanguageWeight = 0.4f
+            });
+
+            variations.Add(new SchedulingWeights
+            {
+                ExperienceWeight = 0.4f,
+                FeedbackWeight = 0.1f,
+                WorkloadBalanceWeight = 0.4f,
+                LanguageWeight = 0.1f
+            });
+
             // Generate additional random variations if needed
             for (int i = variations.Count; i < count; i++)
             {
                 // Generate random weights
-                float e = (float)random.NextDouble() * 0.5f + 0.1f; // Between 0.1 and 0.6
-                float f = (float)random.NextDouble() * 0.5f + 0.1f;
-                float w = (float)random.NextDouble() * 0.5f + 0.1f;
-                float l = (float)random.NextDouble() * 0.5f + 0.1f;
+                float e = (float)random.NextDouble() * 0.7f + 0.1f; // Between 0.1 and 0.8
+                float f = (float)random.NextDouble() * 0.7f + 0.1f;
+                float w = (float)random.NextDouble() * 0.7f + 0.1f;
+                float l = (float)random.NextDouble() * 0.7f + 0.1f;
 
                 // Normalize to sum to 1
                 float sum = e + f + w + l;

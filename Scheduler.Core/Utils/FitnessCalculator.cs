@@ -15,7 +15,7 @@ namespace Scheduler.Core.Utils
             if (schedule.FlightAssignments.Count == 0)
                 return 0;
 
-          
+            
 
             float fitnessScore = 0;
 
@@ -38,16 +38,26 @@ namespace Scheduler.Core.Utils
             // Calculate license compliance rate
             float licenseComplianceRate = CalculateLicenseComplianceRate(schedule);
 
+            // Calculate senior steward coverage
+            float seniorStewardCoverage = CalculateSeniorStewardCoverage(schedule);
+
+            // Calculate crew size compliance
+            float crewSizeCompliance = CalculateCrewSizeCompliance(schedule);
+
             // Final fitness is a weighted combination of all factors
             fitnessScore = 0.30f * completionRate +          // Completion is most important
                            0.15f * workloadBalance +          // Workload balance
-                           0.15f * languageMatchRate +       // Language matching
-                           0.15f * qualityMatchRate +        // Quality matching
-                           0.10f * pairingConsistency +      // Paired flights consistency
-                           0.15f * licenseComplianceRate;    // License compliance
+                           0.10f * languageMatchRate +        // Language matching
+                           0.15f * qualityMatchRate +         // Quality matching
+                           0.10f * pairingConsistency +       // Paired flights consistency
+                           0.10f * licenseComplianceRate +    // License compliance
+                           0.05f * seniorStewardCoverage +    // Senior steward coverage
+                           0.05f * crewSizeCompliance;        // Crew size compliance
 
             return fitnessScore;
         }
+
+        // Check if there are license violations (stewards without proper aircraft licenses)
         private static bool HasLicenseViolations(WeeklySchedule schedule)
         {
             foreach (var assignment in schedule.FlightAssignments)
@@ -65,8 +75,9 @@ namespace Scheduler.Core.Utils
 
             return false;
         }
-        // Check for critical violations that would make a schedule invalid
+
        
+
         private static float CalculateLicenseComplianceRate(WeeklySchedule schedule)
         {
             int totalStewardAssignments = 0;
@@ -96,9 +107,41 @@ namespace Scheduler.Core.Utils
             return totalStewardAssignments > 0 ? (float)compliantAssignments / totalStewardAssignments : 1.0f;
         }
 
-        
+        // Check if all flights have senior stewards
+        private static float CalculateSeniorStewardCoverage(WeeklySchedule schedule)
+        {
+            int totalFlights = schedule.FlightAssignments.Count;
+            if (totalFlights == 0)
+                return 1.0f;
 
-        
+            int flightsWithSenior = schedule.FlightAssignments.Count(fa =>
+                fa.BusinessStewards.Any(s => s.IsSenior));
+
+            return (float)flightsWithSenior / totalFlights;
+        }
+
+        // Calculate how well flights meet their required crew size
+        private static float CalculateCrewSizeCompliance(WeeklySchedule schedule)
+        {
+            if (schedule.FlightAssignments.Count == 0)
+                return 1.0f;
+
+            float totalComplianceScore = 0;
+
+            foreach (var assignment in schedule.FlightAssignments)
+            {
+                float businessCompletion = Math.Min(1.0f, (float)assignment.BusinessStewards.Count /
+                    Math.Max(1, assignment.Flight.RequiredBusinessCrew));
+
+                float economyCompletion = Math.Min(1.0f, (float)assignment.EconomyStewards.Count /
+                    Math.Max(1, assignment.Flight.RequiredEconomyCrew));
+
+                // Average of business and economy completion rates
+                totalComplianceScore += (businessCompletion + economyCompletion) / 2.0f;
+            }
+
+            return totalComplianceScore / schedule.FlightAssignments.Count;
+        }
 
         // Calculate how well paired flights maintain the same crew
         private static float CalculatePairingConsistency(WeeklySchedule schedule)
@@ -142,16 +185,35 @@ namespace Scheduler.Core.Utils
                     var economy1 = flight1.EconomyStewards.Select(s => s.StewardId).OrderBy(id => id).ToList();
                     var economy2 = flight2.EconomyStewards.Select(s => s.StewardId).OrderBy(id => id).ToList();
 
-                    // Pair is consistent if both business and economy crews match
-                    if (business1.SequenceEqual(business2) && economy1.SequenceEqual(economy2))
-                    {
-                        consistentPairs++;
-                    }
+                    // Calculate similarity scores
+                    float businessSimilarity = CalculateListSimilarity(business1, business2);
+                    float economySimilarity = CalculateListSimilarity(economy1, economy2);
+
+                    // Average similarity score for this pair
+                    float pairSimilarity = (businessSimilarity + economySimilarity) / 2.0f;
+
+                    // Add to total consistency score
+                    consistentPairs += (int)(pairSimilarity * 100);
                 }
             }
 
-            // Calculate consistency rate
-            return totalPairs > 0 ? (float)consistentPairs / totalPairs : 1.0f;
+            // Calculate consistency rate (0-1 scale)
+            return totalPairs > 0 ? (float)consistentPairs / (totalPairs * 100) : 1.0f;
+        }
+
+        // Helper to calculate similarity between two lists
+        private static float CalculateListSimilarity<T>(List<T> list1, List<T> list2)
+        {
+            if (list1.Count == 0 && list2.Count == 0)
+                return 1.0f;
+
+            if (list1.Count == 0 || list2.Count == 0)
+                return 0.0f;
+
+            int common = list1.Intersect(list2).Count();
+            int total = Math.Max(list1.Count, list2.Count);
+
+            return (float)common / total;
         }
 
         // Calculate how evenly the work is distributed
@@ -237,7 +299,7 @@ namespace Scheduler.Core.Utils
 
             foreach (var assignment in schedule.FlightAssignments)
             {
-                float flightImportance = Math.Min(1.0f, assignment.Flight.Priority / 10.0f); // Normalize to 0-1
+                float flightImportance = Math.Min(1.0f, assignment.Flight.Priority / 5.0f); // Normalize to 0-1 for 1-5 scale
                 float stewardQuality = 0;
 
                 var allAssignedStewards = new List<StewardDto>();
@@ -247,7 +309,7 @@ namespace Scheduler.Core.Utils
                 if (allAssignedStewards.Count > 0)
                 {
                     // Calculate average quality score for assigned stewards
-                    float avgExperience = allAssignedStewards.Average(s => s.ExperienceYears) / 10.0f; // Normalize to 0-1
+                    float avgExperience = allAssignedStewards.Average(s => Math.Min(1.0f, s.ExperienceYears / 10.0f)); // Normalize to 0-1
                     float avgFeedback = allAssignedStewards.Average(s =>
                         Math.Min(1.0f, Math.Max(0, s.FeedbackScore / 5.0f))); // Normalize to 0-1
 
@@ -255,7 +317,26 @@ namespace Scheduler.Core.Utils
                 }
 
                 // Higher score if high-quality stewards are assigned to high-priority flights
-                float matchScore = 1.0f - Math.Abs(flightImportance - stewardQuality);
+                float matchScore = 0;
+
+                // If flight is high priority, we want high quality stewards
+                if (flightImportance > 0.7f)
+                {
+                    // For high priority flights, we want quality >= importance
+                    matchScore = stewardQuality >= flightImportance ? 1.0f : stewardQuality / flightImportance;
+                }
+                else if (flightImportance <= 0.3f)
+                {
+                    // For low priority flights, we don't need high quality stewards
+                    // So if steward quality is low, that's fine
+                    matchScore = 1.0f - Math.Max(0, stewardQuality - (flightImportance + 0.2f));
+                }
+                else
+                {
+                    // For medium priority flights, we want a close match
+                    matchScore = 1.0f - Math.Abs(flightImportance - stewardQuality);
+                }
+
                 totalScore += matchScore;
             }
 
@@ -269,8 +350,7 @@ namespace Scheduler.Core.Utils
                 return 0;
 
             // Check hard constraints first - if any is violated, return 0
-
-            // Check if steward has license for the aircraft (NEW)
+            // Check if steward has license for the aircraft
             if (!steward.HasLicenseForAircraft(flight.AircraftType))
                 return 0;
 
@@ -279,7 +359,6 @@ namespace Scheduler.Core.Utils
                 return 0;
 
             // Calculate soft constraint scores
-
             // Experience score (0-1): More experienced stewards score higher
             float experienceScore = Math.Min(1.0f, steward.ExperienceYears / 10.0f);
 
