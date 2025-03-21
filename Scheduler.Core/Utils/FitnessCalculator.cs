@@ -15,11 +15,13 @@ namespace Scheduler.Core.Utils
             if (schedule.FlightAssignments.Count == 0)
                 return 0;
 
-            
+            // Track total flights that should be scheduled this week
+            int totalPossibleFlights = schedule.TotalFlightCount > 0 ? schedule.TotalFlightCount : schedule.FlightAssignments.Count;
 
-            float fitnessScore = 0;
+            // Calculate percentage of flights scheduled
+            float flightCoverageRate = (float)schedule.FlightAssignments.Count / totalPossibleFlights;
 
-            // Check if all flights are completely assigned
+            // Calculate completion rate of scheduled flights
             float completionRate = schedule.FlightAssignments.Count(fa => fa.IsComplete()) /
                                   (float)schedule.FlightAssignments.Count;
 
@@ -32,174 +34,21 @@ namespace Scheduler.Core.Utils
             // Calculate steward quality match for flights (based on flight priority and steward quality)
             float qualityMatchRate = CalculateQualityMatchRate(schedule);
 
-            // Calculate crew pairing consistency (same crew for paired flights)
-            float pairingConsistency = CalculatePairingConsistency(schedule);
-
-            // Calculate license compliance rate
-            float licenseComplianceRate = CalculateLicenseComplianceRate(schedule);
-
-            // Calculate senior steward coverage
-            float seniorStewardCoverage = CalculateSeniorStewardCoverage(schedule);
-
-            // Calculate crew size compliance
-            float crewSizeCompliance = CalculateCrewSizeCompliance(schedule);
+            // Calculate flight pair consistency - very important!
 
             // Final fitness is a weighted combination of all factors
-            fitnessScore = 0.30f * completionRate +          // Completion is most important
-                           0.15f * workloadBalance +          // Workload balance
-                           0.10f * languageMatchRate +        // Language matching
-                           0.15f * qualityMatchRate +         // Quality matching
-                           0.10f * pairingConsistency +       // Paired flights consistency
-                           0.10f * licenseComplianceRate +    // License compliance
-                           0.05f * seniorStewardCoverage +    // Senior steward coverage
-                           0.05f * crewSizeCompliance;        // Crew size compliance
+            // Give higher weight to flight coverage and completion
+            float fitnessScore = 0.35f * flightCoverageRate +       // Coverage of all flights is most important
+                               0.30f * completionRate +             // Completion of scheduled flights 
+                               0.15f * workloadBalance +            // Workload balance
+                               0.10f * languageMatchRate +          // Language matching
+                               0.10f * qualityMatchRate;           // Quality matching
 
             return fitnessScore;
         }
 
-        // Check if there are license violations (stewards without proper aircraft licenses)
-        private static bool HasLicenseViolations(WeeklySchedule schedule)
-        {
-            foreach (var assignment in schedule.FlightAssignments)
-            {
-                string aircraftType = assignment.Flight.AircraftType;
-
-                // Check business stewards
-                if (assignment.BusinessStewards.Any(s => !s.HasLicenseForAircraft(aircraftType)))
-                    return true;
-
-                // Check economy stewards
-                if (assignment.EconomyStewards.Any(s => !s.HasLicenseForAircraft(aircraftType)))
-                    return true;
-            }
-
-            return false;
-        }
-
-       
-
-        private static float CalculateLicenseComplianceRate(WeeklySchedule schedule)
-        {
-            int totalStewardAssignments = 0;
-            int compliantAssignments = 0;
-
-            foreach (var assignment in schedule.FlightAssignments)
-            {
-                string aircraftType = assignment.Flight.AircraftType;
-
-                // Check business stewards
-                foreach (var steward in assignment.BusinessStewards)
-                {
-                    totalStewardAssignments++;
-                    if (steward.HasLicenseForAircraft(aircraftType))
-                        compliantAssignments++;
-                }
-
-                // Check economy stewards
-                foreach (var steward in assignment.EconomyStewards)
-                {
-                    totalStewardAssignments++;
-                    if (steward.HasLicenseForAircraft(aircraftType))
-                        compliantAssignments++;
-                }
-            }
-
-            return totalStewardAssignments > 0 ? (float)compliantAssignments / totalStewardAssignments : 1.0f;
-        }
-
-        // Check if all flights have senior stewards
-        private static float CalculateSeniorStewardCoverage(WeeklySchedule schedule)
-        {
-            int totalFlights = schedule.FlightAssignments.Count;
-            if (totalFlights == 0)
-                return 1.0f;
-
-            int flightsWithSenior = schedule.FlightAssignments.Count(fa =>
-                fa.BusinessStewards.Any(s => s.IsSenior));
-
-            return (float)flightsWithSenior / totalFlights;
-        }
-
-        // Calculate how well flights meet their required crew size
-        private static float CalculateCrewSizeCompliance(WeeklySchedule schedule)
-        {
-            if (schedule.FlightAssignments.Count == 0)
-                return 1.0f;
-
-            float totalComplianceScore = 0;
-
-            foreach (var assignment in schedule.FlightAssignments)
-            {
-                float businessCompletion = Math.Min(1.0f, (float)assignment.BusinessStewards.Count /
-                    Math.Max(1, assignment.Flight.RequiredBusinessCrew));
-
-                float economyCompletion = Math.Min(1.0f, (float)assignment.EconomyStewards.Count /
-                    Math.Max(1, assignment.Flight.RequiredEconomyCrew));
-
-                // Average of business and economy completion rates
-                totalComplianceScore += (businessCompletion + economyCompletion) / 2.0f;
-            }
-
-            return totalComplianceScore / schedule.FlightAssignments.Count;
-        }
-
         // Calculate how well paired flights maintain the same crew
-        private static float CalculatePairingConsistency(WeeklySchedule schedule)
-        {
-            // Find all flight pairs
-            Dictionary<int, int> flightPairs = new Dictionary<int, int>();
-
-            foreach (var assignment in schedule.FlightAssignments)
-            {
-                if (assignment.Flight.ReturnFlightId.HasValue)
-                {
-                    flightPairs[assignment.Flight.FlightId] = assignment.Flight.ReturnFlightId.Value;
-                }
-            }
-
-            // If there are no paired flights, return perfect score
-            if (flightPairs.Count == 0)
-                return 1.0f;
-
-            int consistentPairs = 0;
-            int totalPairs = 0;
-
-            // Check each pair for crew consistency
-            foreach (var pair in flightPairs)
-            {
-                var flight1 = schedule.FlightAssignments
-                    .FirstOrDefault(fa => fa.Flight.FlightId == pair.Key);
-
-                var flight2 = schedule.FlightAssignments
-                    .FirstOrDefault(fa => fa.Flight.FlightId == pair.Value);
-
-                if (flight1 != null && flight2 != null)
-                {
-                    totalPairs++;
-
-                    // Check business crew consistency
-                    var business1 = flight1.BusinessStewards.Select(s => s.StewardId).OrderBy(id => id).ToList();
-                    var business2 = flight2.BusinessStewards.Select(s => s.StewardId).OrderBy(id => id).ToList();
-
-                    // Check economy crew consistency
-                    var economy1 = flight1.EconomyStewards.Select(s => s.StewardId).OrderBy(id => id).ToList();
-                    var economy2 = flight2.EconomyStewards.Select(s => s.StewardId).OrderBy(id => id).ToList();
-
-                    // Calculate similarity scores
-                    float businessSimilarity = CalculateListSimilarity(business1, business2);
-                    float economySimilarity = CalculateListSimilarity(economy1, economy2);
-
-                    // Average similarity score for this pair
-                    float pairSimilarity = (businessSimilarity + economySimilarity) / 2.0f;
-
-                    // Add to total consistency score
-                    consistentPairs += (int)(pairSimilarity * 100);
-                }
-            }
-
-            // Calculate consistency rate (0-1 scale)
-            return totalPairs > 0 ? (float)consistentPairs / (totalPairs * 100) : 1.0f;
-        }
+       
 
         // Helper to calculate similarity between two lists
         private static float CalculateListSimilarity<T>(List<T> list1, List<T> list2)
@@ -222,7 +71,7 @@ namespace Scheduler.Core.Utils
             if (allStewards.Count == 0)
                 return 0;
 
-            // Calculate average hours per steward
+            // Calculate hours per steward
             Dictionary<int, float> stewardHours = new Dictionary<int, float>();
 
             // Initialize with current monthly hours
@@ -255,7 +104,6 @@ namespace Scheduler.Core.Utils
             float stdDev = (float)Math.Sqrt(sumSquaredDiff / activeHours.Count);
 
             // Convert to a 0-1 score (lower std dev is better)
-            // Note: We'll assume a max standard deviation of 20 hours
             float maxStdDev = 20.0f;
             float balance = Math.Max(0, 1 - (stdDev / maxStdDev));
 
@@ -317,7 +165,7 @@ namespace Scheduler.Core.Utils
                 }
 
                 // Higher score if high-quality stewards are assigned to high-priority flights
-                float matchScore = 0;
+                float matchScore;
 
                 // If flight is high priority, we want high quality stewards
                 if (flightImportance > 0.7f)
@@ -328,7 +176,6 @@ namespace Scheduler.Core.Utils
                 else if (flightImportance <= 0.3f)
                 {
                     // For low priority flights, we don't need high quality stewards
-                    // So if steward quality is low, that's fine
                     matchScore = 1.0f - Math.Max(0, stewardQuality - (flightImportance + 0.2f));
                 }
                 else

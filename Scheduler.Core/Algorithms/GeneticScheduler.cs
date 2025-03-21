@@ -27,7 +27,7 @@ namespace Scheduler.Core.Algorithms
             var population = new List<WeeklySchedule>();
             var priorityScheduler = new PriorityBasedScheduler();
 
-            // Generate weight variations - more variations for more diversity
+            // Generate weight variations for diversity
             var weightVariations = SchedulingWeights.GenerateVariations(_config.PopulationSize * 2);
 
             Console.WriteLine($"Generated {weightVariations.Count} different weight configurations");
@@ -44,31 +44,80 @@ namespace Scheduler.Core.Algorithms
                 // Try to improve it with local search
                 priorityScheduler.ImproveSchedule(schedule, stewardsCopy);
 
-                // Calculate initial fitness
-                schedule.FitnessScore = FitnessCalculator.CalculateScheduleFitness(schedule, stewards);
+                // Validate flight pairs - only add valid schedules
+                if (HasValidFlightPairs(schedule))
+                {
+                    // Calculate initial fitness
+                    schedule.FitnessScore = FitnessCalculator.CalculateScheduleFitness(schedule, stewards);
 
-                population.Add(schedule);
+                    // Only add if valid and unique enough
+                    if (!population.Any(p => AreSchedulesSimilar(p, schedule, 0.9f)))
+                    {
+                        population.Add(schedule);
+                    }
 
-                // If we have enough schedules, stop
-                if (population.Count >= _config.PopulationSize)
-                    break;
+                    // If we have enough schedules, stop
+                    if (population.Count >= _config.PopulationSize)
+                        break;
+                }
             }
 
-            // Create additional random variations to ensure diversity
+            Console.WriteLine($"Generated {population.Count} valid and diverse initial schedules");
+
+            // Ensure we have enough valid schedules
             while (population.Count < _config.PopulationSize)
             {
-                // Get a random schedule from existing population
-                var baseSchedule = population[_random.Next(population.Count)];
-
-                // Create a mutated copy with higher mutation rate for diversity
-                var newSchedule = Mutate(baseSchedule.Clone(), flights, stewards, 0.4f);
-
-                // Only add valid schedules
-                if (!HasOverlappingFlights(newSchedule) && newSchedule.FlightAssignments.Count > 0)
+                // If we have some valid schedules, use them as templates with slight modifications
+                if (population.Count > 0)
                 {
-                    // Calculate fitness
-                    newSchedule.FitnessScore = FitnessCalculator.CalculateScheduleFitness(newSchedule, stewards);
-                    population.Add(newSchedule);
+                    // Get a random schedule
+                    var baseSchedule = population[_random.Next(population.Count)];
+
+                    // Clone it for safety
+                    var newSchedule = baseSchedule.Clone();
+
+                    // Apply very small mutations that preserve flight pairs
+                    newSchedule = MutatePreservingPairs(newSchedule, flights, stewards);
+
+                    // Only add if it's valid and not too similar to existing schedules
+                    if (HasValidFlightPairs(newSchedule) && !HasOverlappingFlights(newSchedule) &&
+                        !population.Any(p => AreSchedulesSimilar(p, newSchedule, 0.9f)))
+                    {
+                        newSchedule.FitnessScore = FitnessCalculator.CalculateScheduleFitness(newSchedule, stewards);
+                        population.Add(newSchedule);
+                    }
+                }
+                else
+                {
+                    // If we couldn't generate any valid schedules, try the PriorityScheduler again with different weights
+                    var newWeights = new SchedulingWeights
+                    {
+                        ExperienceWeight = (float)_random.NextDouble(),
+                        FeedbackWeight = (float)_random.NextDouble(),
+                        WorkloadBalanceWeight = (float)_random.NextDouble(),
+                        LanguageWeight = (float)_random.NextDouble()
+                    };
+
+                    // Normalize the weights
+                    float sum = newWeights.ExperienceWeight + newWeights.FeedbackWeight +
+                                newWeights.WorkloadBalanceWeight + newWeights.LanguageWeight;
+
+                    newWeights.ExperienceWeight /= sum;
+                    newWeights.FeedbackWeight /= sum;
+                    newWeights.WorkloadBalanceWeight /= sum;
+                    newWeights.LanguageWeight /= sum;
+
+                    var stewardsCopy = DeepCopyStewards(stewards);
+
+                    var schedule = priorityScheduler.GenerateSchedule(flights, stewardsCopy, weekStart, newWeights);
+
+                    priorityScheduler.ImproveSchedule(schedule, stewardsCopy);
+
+                    if (HasValidFlightPairs(schedule) && !HasOverlappingFlights(schedule))
+                    {
+                        schedule.FitnessScore = FitnessCalculator.CalculateScheduleFitness(schedule, stewards);
+                        population.Add(schedule);
+                    }
                 }
             }
 
@@ -114,6 +163,12 @@ namespace Scheduler.Core.Algorithms
                     improved = true;
 
                     Console.WriteLine($"Generation {generation}: New best solution found! Fitness: {bestEver.FitnessScore}");
+
+                    // Additional validation for flight pairs
+                    if (!HasValidFlightPairs(bestEver))
+                    {
+                        Console.WriteLine("WARNING: Best solution has invalid flight pairs!");
+                    }
                 }
                 else
                 {
@@ -171,8 +226,8 @@ namespace Scheduler.Core.Algorithms
                     {
                         child = Crossover(parent1, parent2);
 
-                        // Verify the child has no overlapping flights
-                        if (HasOverlappingFlights(child))
+                        // Verify the child has valid flight pairs
+                        if (!HasValidFlightPairs(child) || HasOverlappingFlights(child))
                         {
                             // If invalid, just clone one parent
                             child = _random.NextDouble() < 0.5 ? parent1.Clone() : parent2.Clone();
@@ -187,10 +242,11 @@ namespace Scheduler.Core.Algorithms
                     // Mutation
                     if (_random.NextDouble() < currentMutationRate)
                     {
-                        var mutatedChild = Mutate(child.Clone(), flights, stewards, currentMutationRate);
+                        var mutatedChild = MutatePreservingPairs(child.Clone(), flights, stewards, currentMutationRate);
 
                         // Only use the mutated child if it's valid
-                        if (!HasOverlappingFlights(mutatedChild) && mutatedChild.FlightAssignments.Count > 0)
+                        if (HasValidFlightPairs(mutatedChild) && !HasOverlappingFlights(mutatedChild) &&
+                            mutatedChild.FlightAssignments.Count > 0)
                         {
                             child = mutatedChild;
                         }
@@ -204,6 +260,18 @@ namespace Scheduler.Core.Algorithms
                     {
                         newPopulation.Add(child);
                     }
+                }
+
+                // Validate all schedules in new population
+                newPopulation = newPopulation.Where(s => HasValidFlightPairs(s)).ToList();
+
+                // If we lost schedules due to validation, replace them
+                while (newPopulation.Count < _config.PopulationSize)
+                {
+                    // Clone a valid schedule
+                    var replacement = newPopulation[_random.Next(newPopulation.Count)].Clone();
+                    replacement.FitnessScore = FitnessCalculator.CalculateScheduleFitness(replacement, stewards);
+                    newPopulation.Add(replacement);
                 }
 
                 // Occasional logging
@@ -228,8 +296,220 @@ namespace Scheduler.Core.Algorithms
             }
 
             Console.WriteLine($"Final best solution: Fitness={population[0].FitnessScore}, Flights={population[0].FlightAssignments.Count}");
+
+            // Final validity check
+            if (!HasValidFlightPairs(population[0]))
+            {
+                Console.WriteLine("WARNING: Final solution has invalid flight pairs. Using best valid solution.");
+
+                // Find best valid solution
+                var bestValid = population.FirstOrDefault(s => HasValidFlightPairs(s));
+
+                if (bestValid != null)
+                {
+                    return bestValid;
+                }
+
+                // If no valid solution in final population, use best ever
+                if (HasValidFlightPairs(bestEver))
+                {
+                    return bestEver;
+                }
+
+                // Last resort: repair the best solution
+                var repaired = RepairFlightPairs(population[0], flights, stewards);
+                repaired.FitnessScore = FitnessCalculator.CalculateScheduleFitness(repaired, stewards);
+                return repaired;
+            }
+
             return population[0];
         }
+
+        #region Helper Methods for Flight Pair Handling
+
+        // Helper method to get a map of flight pairs
+        private Dictionary<int, FlightAssignment> GetFlightPairMap(WeeklySchedule schedule)
+        {
+            var pairMap = new Dictionary<int, FlightAssignment>();
+
+            foreach (var assignment in schedule.FlightAssignments)
+            {
+                if (assignment.Flight.ReturnFlightId.HasValue)
+                {
+                    var returnId = assignment.Flight.ReturnFlightId.Value;
+                    var returnAssignment = schedule.FlightAssignments
+                        .FirstOrDefault(fa => fa.Flight.FlightId == returnId);
+
+                    if (returnAssignment != null)
+                    {
+                        pairMap[assignment.Flight.FlightId] = returnAssignment;
+                    }
+                }
+            }
+
+            return pairMap;
+        }
+
+        // Helper method to check if a flight is part of a pair
+        private bool IsPartOfPair(FlightAssignment assignment, Dictionary<int, FlightAssignment> pairMap)
+        {
+            return pairMap.ContainsKey(assignment.Flight.FlightId) ||
+                   pairMap.Values.Any(a => a.Flight.FlightId == assignment.Flight.FlightId);
+        }
+
+        // Helper method to get the paired flight assignment
+        private FlightAssignment GetPairedFlight(FlightAssignment assignment, WeeklySchedule schedule)
+        {
+            // If this flight has a return flight, find it
+            if (assignment.Flight.ReturnFlightId.HasValue)
+            {
+                return schedule.FlightAssignments
+                    .FirstOrDefault(fa => fa.Flight.FlightId == assignment.Flight.ReturnFlightId.Value);
+            }
+
+            // If this is a return flight, find the outbound flight
+            return schedule.FlightAssignments
+                .FirstOrDefault(fa => fa.Flight.ReturnFlightId.HasValue &&
+                               fa.Flight.ReturnFlightId.Value == assignment.Flight.FlightId);
+        }
+
+        // Validate that all flight pairs have consistent steward assignments
+        private bool HasValidFlightPairs(WeeklySchedule schedule)
+        {
+            var flightPairs = new Dictionary<int, int>();
+
+            // Build the flight pair map
+            foreach (var assignment in schedule.FlightAssignments)
+            {
+                if (assignment.Flight.ReturnFlightId.HasValue)
+                {
+                    flightPairs[assignment.Flight.FlightId] = assignment.Flight.ReturnFlightId.Value;
+                }
+            }
+
+            // Check each pair to ensure stewards are the same
+            foreach (var pair in flightPairs)
+            {
+                var outboundAssignment = schedule.FlightAssignments
+                    .FirstOrDefault(fa => fa.Flight.FlightId == pair.Key);
+
+                var returnAssignment = schedule.FlightAssignments
+                    .FirstOrDefault(fa => fa.Flight.FlightId == pair.Value);
+
+                if (outboundAssignment != null && returnAssignment != null)
+                {
+                    // Compare business stewards
+                    var outboundBusinessIds = outboundAssignment.BusinessStewards
+                        .Select(s => s.StewardId)
+                        .OrderBy(id => id)
+                        .ToList();
+
+                    var returnBusinessIds = returnAssignment.BusinessStewards
+                        .Select(s => s.StewardId)
+                        .OrderBy(id => id)
+                        .ToList();
+
+                    if (!outboundBusinessIds.SequenceEqual(returnBusinessIds))
+                        return false;
+
+                    // Compare economy stewards
+                    var outboundEconomyIds = outboundAssignment.EconomyStewards
+                        .Select(s => s.StewardId)
+                        .OrderBy(id => id)
+                        .ToList();
+
+                    var returnEconomyIds = returnAssignment.EconomyStewards
+                        .Select(s => s.StewardId)
+                        .OrderBy(id => id)
+                        .ToList();
+
+                    if (!outboundEconomyIds.SequenceEqual(returnEconomyIds))
+                        return false;
+                }
+            }
+
+            return true;
+        }
+
+        // Repair a schedule by fixing broken flight pairs
+        private WeeklySchedule RepairFlightPairs(WeeklySchedule schedule, List<FlightDto> flights, List<StewardDto> stewards)
+        {
+            var repairedSchedule = schedule.Clone();
+            var flightPairs = new Dictionary<int, int>();
+
+            // Build the flight pair map
+            foreach (var assignment in repairedSchedule.FlightAssignments)
+            {
+                if (assignment.Flight.ReturnFlightId.HasValue)
+                {
+                    flightPairs[assignment.Flight.FlightId] = assignment.Flight.ReturnFlightId.Value;
+                }
+            }
+
+            // Check and fix each pair
+            foreach (var pair in flightPairs)
+            {
+                var outboundAssignment = repairedSchedule.FlightAssignments
+                    .FirstOrDefault(fa => fa.Flight.FlightId == pair.Key);
+
+                var returnAssignment = repairedSchedule.FlightAssignments
+                    .FirstOrDefault(fa => fa.Flight.FlightId == pair.Value);
+
+                if (outboundAssignment != null && returnAssignment != null)
+                {
+                    // Check if business stewards match
+                    var outboundBusinessIds = outboundAssignment.BusinessStewards
+                        .Select(s => s.StewardId)
+                        .OrderBy(id => id)
+                        .ToList();
+
+                    var returnBusinessIds = returnAssignment.BusinessStewards
+                        .Select(s => s.StewardId)
+                        .OrderBy(id => id)
+                        .ToList();
+
+                    if (!outboundBusinessIds.SequenceEqual(returnBusinessIds))
+                    {
+                        // Fix business stewards - use the outbound flight's stewards
+                        returnAssignment.BusinessStewards.Clear();
+                        foreach (var steward in outboundAssignment.BusinessStewards)
+                        {
+                            returnAssignment.BusinessStewards.Add(steward);
+                        }
+                    }
+
+                    // Check if economy stewards match
+                    var outboundEconomyIds = outboundAssignment.EconomyStewards
+                        .Select(s => s.StewardId)
+                        .OrderBy(id => id)
+                        .ToList();
+
+                    var returnEconomyIds = returnAssignment.EconomyStewards
+                        .Select(s => s.StewardId)
+                        .OrderBy(id => id)
+                        .ToList();
+
+                    if (!outboundEconomyIds.SequenceEqual(returnEconomyIds))
+                    {
+                        // Fix economy stewards - use the outbound flight's stewards
+                        returnAssignment.EconomyStewards.Clear();
+                        foreach (var steward in outboundAssignment.EconomyStewards)
+                        {
+                            returnAssignment.EconomyStewards.Add(steward);
+                        }
+                    }
+                }
+            }
+
+            // Rebuild steward schedules
+            RebuildStewardSchedules(repairedSchedule);
+
+            return repairedSchedule;
+        }
+
+        #endregion
+
+        #region Genetic Operations
 
         // Tournament selection
         private WeeklySchedule SelectParent(List<WeeklySchedule> population)
@@ -247,6 +527,652 @@ namespace Scheduler.Core.Algorithms
             // Return the best
             return candidates.OrderByDescending(s => s.FitnessScore).First();
         }
+
+        // Check if two schedules are very similar (to maintain diversity)
+        private bool AreSchedulesSimilar(WeeklySchedule schedule1, WeeklySchedule schedule2, float similarityThreshold)
+        {
+            int matchingAssignments = 0;
+            int totalAssignments = schedule1.FlightAssignments.Count;
+
+            if (totalAssignments == 0 || schedule2.FlightAssignments.Count == 0)
+                return false;
+
+            foreach (var assignment1 in schedule1.FlightAssignments)
+            {
+                var assignment2 = schedule2.FlightAssignments
+                    .FirstOrDefault(a => a.Flight.FlightId == assignment1.Flight.FlightId);
+
+                if (assignment2 != null)
+                {
+                    // Check business stewards
+                    bool businessMatch = assignment1.BusinessStewards
+                        .Select(s => s.StewardId)
+                        .OrderBy(id => id)
+                        .SequenceEqual(
+                            assignment2.BusinessStewards
+                            .Select(s => s.StewardId)
+                            .OrderBy(id => id));
+
+                    // Check economy stewards
+                    bool economyMatch = assignment1.EconomyStewards
+                        .Select(s => s.StewardId)
+                        .OrderBy(id => id)
+                        .SequenceEqual(
+                            assignment2.EconomyStewards
+                            .Select(s => s.StewardId)
+                            .OrderBy(id => id));
+
+                    if (businessMatch && economyMatch)
+                        matchingAssignments++;
+                }
+            }
+
+            float similarity = (float)matchingAssignments / totalAssignments;
+            return similarity >= similarityThreshold;
+        }
+
+        // Improved crossover that preserves flight pairs
+        private WeeklySchedule Crossover(WeeklySchedule parent1, WeeklySchedule parent2)
+        {
+            var child = new WeeklySchedule
+            {
+                WeekStart = parent1.WeekStart,
+                WeekEnd = parent1.WeekEnd
+            };
+
+            // Get flight pairs from both parents
+            var parent1PairMap = GetFlightPairMap(parent1);
+            var parent2PairMap = GetFlightPairMap(parent2);
+
+            // Find all flight IDs from both parents
+            var allFlightIds = parent1.FlightAssignments
+                .Select(fa => fa.Flight.FlightId)
+                .Union(parent2.FlightAssignments.Select(fa => fa.Flight.FlightId))
+                .Distinct()
+                .ToList();
+
+            // Track processed flights
+            var processedFlights = new HashSet<int>();
+
+            // First, process paired flights to ensure they stay together
+            foreach (var flightId in allFlightIds)
+            {
+                if (processedFlights.Contains(flightId))
+                    continue;
+
+                // Check if this flight is part of a pair in either parent
+                int? returnFlightId = null;
+
+                if (parent1PairMap.TryGetValue(flightId, out var returnFlight1))
+                {
+                    returnFlightId = returnFlight1.Flight.FlightId;
+                }
+                else if (parent2PairMap.TryGetValue(flightId, out var returnFlight2))
+                {
+                    returnFlightId = returnFlight2.Flight.FlightId;
+                }
+
+                if (returnFlightId.HasValue)
+                {
+                    // This is a paired flight, handle both flights together
+                    var parent1OutboundAssignment = parent1.FlightAssignments
+                        .FirstOrDefault(fa => fa.Flight.FlightId == flightId);
+                    var parent1ReturnAssignment = parent1.FlightAssignments
+                        .FirstOrDefault(fa => fa.Flight.FlightId == returnFlightId.Value);
+
+                    var parent2OutboundAssignment = parent2.FlightAssignments
+                        .FirstOrDefault(fa => fa.Flight.FlightId == flightId);
+                    var parent2ReturnAssignment = parent2.FlightAssignments
+                        .FirstOrDefault(fa => fa.Flight.FlightId == returnFlightId.Value);
+
+                    // Both parents have both flights
+                    bool parent1HasBoth = parent1OutboundAssignment != null && parent1ReturnAssignment != null;
+                    bool parent2HasBoth = parent2OutboundAssignment != null && parent2ReturnAssignment != null;
+
+                    // Choose which parent to inherit from (bias towards the better parent)
+                    bool useParent1 = (parent1HasBoth && !parent2HasBoth) ||
+                                      (parent1HasBoth && parent2HasBoth && _random.NextDouble() < 0.6);
+
+                    if (useParent1 && parent1HasBoth)
+                    {
+                        // Inherit both flights from parent1
+                        child.FlightAssignments.Add(CloneFlightAssignment(parent1OutboundAssignment));
+                        child.FlightAssignments.Add(CloneFlightAssignment(parent1ReturnAssignment));
+                    }
+                    else if (parent2HasBoth)
+                    {
+                        // Inherit both flights from parent2
+                        child.FlightAssignments.Add(CloneFlightAssignment(parent2OutboundAssignment));
+                        child.FlightAssignments.Add(CloneFlightAssignment(parent2ReturnAssignment));
+                    }
+                    else if (parent1OutboundAssignment != null)
+                    {
+                        // Only one flight exists in parent1
+                        child.FlightAssignments.Add(CloneFlightAssignment(parent1OutboundAssignment));
+                    }
+                    else if (parent2OutboundAssignment != null)
+                    {
+                        // Only one flight exists in parent2
+                        child.FlightAssignments.Add(CloneFlightAssignment(parent2OutboundAssignment));
+                    }
+
+                    // Mark both flights as processed
+                    processedFlights.Add(flightId);
+                    if (returnFlightId.HasValue)
+                        processedFlights.Add(returnFlightId.Value);
+                }
+            }
+
+            // Now handle unpaired flights
+            foreach (var flightId in allFlightIds)
+            {
+                if (processedFlights.Contains(flightId))
+                    continue;
+
+                var parent1Assignment = parent1.FlightAssignments
+                    .FirstOrDefault(fa => fa.Flight.FlightId == flightId);
+
+                var parent2Assignment = parent2.FlightAssignments
+                    .FirstOrDefault(fa => fa.Flight.FlightId == flightId);
+
+                // Randomly choose which parent to inherit from
+                bool useParent1 = _random.NextDouble() < 0.5;
+
+                if (useParent1 && parent1Assignment != null)
+                {
+                    child.FlightAssignments.Add(CloneFlightAssignment(parent1Assignment));
+                }
+                else if (!useParent1 && parent2Assignment != null)
+                {
+                    child.FlightAssignments.Add(CloneFlightAssignment(parent2Assignment));
+                }
+                else if (parent1Assignment != null)
+                {
+                    child.FlightAssignments.Add(CloneFlightAssignment(parent1Assignment));
+                }
+                else if (parent2Assignment != null)
+                {
+                    child.FlightAssignments.Add(CloneFlightAssignment(parent2Assignment));
+                }
+
+                processedFlights.Add(flightId);
+            }
+
+            // Rebuild steward schedules
+            RebuildStewardSchedules(child);
+
+            return child;
+        }
+
+        // Mutation operator that preserves flight pairs
+        private WeeklySchedule MutatePreservingPairs(WeeklySchedule schedule, List<FlightDto> allFlights,
+                                         List<StewardDto> allStewards, float mutationRate = 0.0f)
+        {
+            if (schedule.FlightAssignments.Count == 0)
+                return schedule;
+
+            // Apply multiple mutations based on mutationRate
+            int mutations = 1 + (int)(mutationRate * 3); // At least 1, up to 4 mutations
+
+            for (int m = 0; m < mutations; m++)
+            {
+                // Choose a mutation type with different probabilities
+                double randomValue = _random.NextDouble();
+
+                try
+                {
+                    if (randomValue < 0.4) // 40% chance
+                    {
+                        // Swap two stewards between flights while preserving pairs
+                        MutateByStewardSwap(schedule);
+                    }
+                    else if (randomValue < 0.7) // 30% chance
+                    {
+                        // Replace a steward with another qualified one
+                        MutateByReplacementPreservingPairs(schedule, allStewards);
+                    }
+                    else if (randomValue < 0.9) // 20% chance
+                    {
+                        // Add a flight that's not currently in the schedule
+                        MutateByAddingFlightPair(schedule, allFlights, allStewards);
+                    }
+                    else // 10% chance
+                    {
+                        // Remove a flight from the schedule (more dramatic change)
+                        MutateByRemovingFlightPair(schedule);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // Log the error but continue with other mutations
+                    Console.WriteLine($"Mutation error: {ex.Message}");
+                }
+            }
+
+            // Rebuild steward schedules
+            RebuildStewardSchedules(schedule);
+
+            return schedule;
+        }
+
+        // Swap stewards between flights while preserving flight pairs
+        private void MutateByStewardSwap(WeeklySchedule schedule)
+        {
+            if (schedule.FlightAssignments.Count < 2)
+                return;
+
+            // Create a map of flight pairs
+            var pairMap = GetFlightPairMap(schedule);
+
+            // Attempt several times to find a valid swap
+            for (int attempt = 0; attempt < 10; attempt++)
+            {
+                // Pick two random flights
+                int idx1 = _random.Next(schedule.FlightAssignments.Count);
+                int idx2 = _random.Next(schedule.FlightAssignments.Count);
+
+                // Make sure they're different
+                if (idx1 == idx2) continue;
+
+                var flight1 = schedule.FlightAssignments[idx1];
+                var flight2 = schedule.FlightAssignments[idx2];
+
+                // Skip if either flight is the return flight of the other
+                if (flight1.Flight.ReturnFlightId.HasValue && flight1.Flight.ReturnFlightId.Value == flight2.Flight.FlightId ||
+                    flight2.Flight.ReturnFlightId.HasValue && flight2.Flight.ReturnFlightId.Value == flight1.Flight.FlightId)
+                    continue;
+
+                // Find paired flights if they exist
+                var flight1Pair = GetPairedFlight(flight1, schedule);
+                var flight2Pair = GetPairedFlight(flight2, schedule);
+
+                // Choose steward type to swap
+                bool swapBusiness = _random.NextDouble() < 0.5;
+
+                if (swapBusiness)
+                {
+                    // Swap business stewards
+                    if (flight1.BusinessStewards.Count > 0 && flight2.BusinessStewards.Count > 0)
+                    {
+                        int steward1Idx = _random.Next(flight1.BusinessStewards.Count);
+                        int steward2Idx = _random.Next(flight2.BusinessStewards.Count);
+
+                        var steward1 = flight1.BusinessStewards[steward1Idx];
+                        var steward2 = flight2.BusinessStewards[steward2Idx];
+
+                        // Skip senior stewards if they're the only senior
+                        if ((steward1.IsSenior && flight1.BusinessStewards.Count(s => s.IsSenior) <= 1) ||
+                            (steward2.IsSenior && flight2.BusinessStewards.Count(s => s.IsSenior) <= 1))
+                            continue;
+
+                        // Check if both stewards can work on the other's flights
+                        bool canSwap = steward1.HasLicenseForAircraft(flight2.Flight.AircraftType) &&
+                                      steward2.HasLicenseForAircraft(flight1.Flight.AircraftType);
+
+                        // Also check paired flights if applicable
+                        if (flight1Pair != null)
+                            canSwap &= steward2.HasLicenseForAircraft(flight1Pair.Flight.AircraftType);
+
+                        if (flight2Pair != null)
+                            canSwap &= steward1.HasLicenseForAircraft(flight2Pair.Flight.AircraftType);
+
+                        if (canSwap)
+                        {
+                            // Perform swap on first flights
+                            flight1.BusinessStewards.RemoveAt(steward1Idx);
+                            flight2.BusinessStewards.RemoveAt(steward2Idx);
+
+                            flight1.BusinessStewards.Add(steward2);
+                            flight2.BusinessStewards.Add(steward1);
+
+                            // Also swap on paired flights
+                            if (flight1Pair != null)
+                            {
+                                int steward1PairIdx = flight1Pair.BusinessStewards.FindIndex(s => s.StewardId == steward1.StewardId);
+                                if (steward1PairIdx >= 0)
+                                {
+                                    flight1Pair.BusinessStewards.RemoveAt(steward1PairIdx);
+                                    flight1Pair.BusinessStewards.Add(steward2);
+                                }
+                            }
+
+                            if (flight2Pair != null)
+                            {
+                                int steward2PairIdx = flight2Pair.BusinessStewards.FindIndex(s => s.StewardId == steward2.StewardId);
+                                if (steward2PairIdx >= 0)
+                                {
+                                    flight2Pair.BusinessStewards.RemoveAt(steward2PairIdx);
+                                    flight2Pair.BusinessStewards.Add(steward1);
+                                }
+                            }
+
+                            // Successfully swapped
+                            return;
+                        }
+                    }
+                }
+                else
+                {
+                    // Swap economy stewards using similar logic
+                    if (flight1.EconomyStewards.Count > 0 && flight2.EconomyStewards.Count > 0)
+                    {
+                        int steward1Idx = _random.Next(flight1.EconomyStewards.Count);
+                        int steward2Idx = _random.Next(flight2.EconomyStewards.Count);
+
+                        var steward1 = flight1.EconomyStewards[steward1Idx];
+                        var steward2 = flight2.EconomyStewards[steward2Idx];
+
+                        // Check if stewards can work on the other's flights
+                        bool canSwap = steward1.HasLicenseForAircraft(flight2.Flight.AircraftType) &&
+                                      steward2.HasLicenseForAircraft(flight1.Flight.AircraftType);
+
+                        // Also check paired flights
+                        if (flight1Pair != null)
+                            canSwap &= steward2.HasLicenseForAircraft(flight1Pair.Flight.AircraftType);
+
+                        if (flight2Pair != null)
+                            canSwap &= steward1.HasLicenseForAircraft(flight2Pair.Flight.AircraftType);
+
+                        if (canSwap)
+                        {
+                            // Perform swap on first flights
+                            flight1.EconomyStewards.RemoveAt(steward1Idx);
+                            flight2.EconomyStewards.RemoveAt(steward2Idx);
+
+                            flight1.EconomyStewards.Add(steward2);
+                            flight2.EconomyStewards.Add(steward1);
+
+                            // Also swap on paired flights
+                            if (flight1Pair != null)
+                            {
+                                int steward1PairIdx = flight1Pair.EconomyStewards.FindIndex(s => s.StewardId == steward1.StewardId);
+                                if (steward1PairIdx >= 0)
+                                {
+                                    flight1Pair.EconomyStewards.RemoveAt(steward1PairIdx);
+                                    flight1Pair.EconomyStewards.Add(steward2);
+                                }
+                            }
+
+                            if (flight2Pair != null)
+                            {
+                                int steward2PairIdx = flight2Pair.EconomyStewards.FindIndex(s => s.StewardId == steward2.StewardId);
+                                if (steward2PairIdx >= 0)
+                                {
+                                    flight2Pair.EconomyStewards.RemoveAt(steward2PairIdx);
+                                    flight2Pair.EconomyStewards.Add(steward1);
+                                }
+                            }
+
+                            // Successfully swapped
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Replace a steward with another qualified one, maintaining flight pairs
+        private void MutateByReplacementPreservingPairs(WeeklySchedule schedule, List<StewardDto> allStewards)
+        {
+            if (schedule.FlightAssignments.Count == 0)
+                return;
+
+            // Try several attempts to find a valid replacement
+            for (int attempt = 0; attempt < 5; attempt++)
+            {
+                // Pick a random flight
+                int flightIdx = _random.Next(schedule.FlightAssignments.Count);
+                var flightAssignment = schedule.FlightAssignments[flightIdx];
+
+                // Find paired flight if it exists
+                var pairedAssignment = GetPairedFlight(flightAssignment, schedule);
+
+                // Choose whether to replace business or economy steward
+                bool replaceBusiness = _random.NextDouble() < 0.5;
+
+                if (replaceBusiness && flightAssignment.BusinessStewards.Count > 0)
+                {
+                    // Don't replace senior stewards if there's only one
+                    var replaceable = flightAssignment.BusinessStewards
+                        .Where(s => !s.IsSenior || flightAssignment.BusinessStewards.Count(bs => bs.IsSenior) > 1)
+                        .ToList();
+
+                    if (replaceable.Count == 0)
+                        continue;
+
+                    // Pick a random steward to replace
+                    int stewardIdx = _random.Next(replaceable.Count);
+                    var stewardToReplace = replaceable[stewardIdx];
+
+                    // Find potential replacements
+                    var candidates = allStewards
+                        .Where(s => s.Role == "Business" &&
+                               s.StewardId != stewardToReplace.StewardId &&
+                               s.HasLicenseForAircraft(flightAssignment.Flight.AircraftType) &&
+                               !flightAssignment.BusinessStewards.Any(bs => bs.StewardId == s.StewardId))
+                        .ToList();
+
+                    // If steward being replaced is senior, replacement must also be senior
+                    if (stewardToReplace.IsSenior)
+                    {
+                        candidates = candidates.Where(s => s.IsSenior).ToList();
+                    }
+
+                    // Check paired flight compatibility
+                    if (pairedAssignment != null)
+                    {
+                        candidates = candidates
+                            .Where(s => s.HasLicenseForAircraft(pairedAssignment.Flight.AircraftType))
+                            .ToList();
+                    }
+
+                    if (candidates.Any())
+                    {
+                        // Pick a random replacement
+                        var replacement = candidates[_random.Next(candidates.Count)];
+
+                        // Replace in the flight assignment
+                        flightAssignment.BusinessStewards.Remove(stewardToReplace);
+                        flightAssignment.BusinessStewards.Add(replacement);
+
+                        // Replace in paired flight if it exists
+                        if (pairedAssignment != null)
+                        {
+                            pairedAssignment.BusinessStewards.Remove(stewardToReplace);
+                            pairedAssignment.BusinessStewards.Add(replacement);
+                        }
+
+                        return;
+                    }
+                }
+                else if (!replaceBusiness && flightAssignment.EconomyStewards.Count > 0)
+                {
+                    // Pick a random economy steward to replace
+                    int stewardIdx = _random.Next(flightAssignment.EconomyStewards.Count);
+                    var stewardToReplace = flightAssignment.EconomyStewards[stewardIdx];
+
+                    // Find potential replacements
+                    var candidates = allStewards
+                        .Where(s => s.Role == "Economy" &&
+                               s.StewardId != stewardToReplace.StewardId &&
+                               s.HasLicenseForAircraft(flightAssignment.Flight.AircraftType) &&
+                               !flightAssignment.EconomyStewards.Any(es => es.StewardId == s.StewardId))
+                        .ToList();
+
+                    // Check paired flight compatibility
+                    if (pairedAssignment != null)
+                    {
+                        candidates = candidates
+                            .Where(s => s.HasLicenseForAircraft(pairedAssignment.Flight.AircraftType))
+                            .ToList();
+                    }
+
+                    if (candidates.Any())
+                    {
+                        // Pick a random replacement
+                        var replacement = candidates[_random.Next(candidates.Count)];
+
+                        // Replace in the flight assignment
+                        flightAssignment.EconomyStewards.Remove(stewardToReplace);
+                        flightAssignment.EconomyStewards.Add(replacement);
+
+                        // Replace in paired flight if it exists
+                        if (pairedAssignment != null)
+                        {
+                            pairedAssignment.EconomyStewards.Remove(stewardToReplace);
+                            pairedAssignment.EconomyStewards.Add(replacement);
+                        }
+
+                        return;
+                    }
+                }
+            }
+        }
+
+        // Add a flight pair that's not in the schedule
+        private void MutateByAddingFlightPair(WeeklySchedule schedule, List<FlightDto> allFlights, List<StewardDto> allStewards)
+        {
+            // Get all flights for the current week
+            var weekFlights = allFlights
+                .Where(f => f.DepartureTime >= schedule.WeekStart &&
+                       f.DepartureTime < schedule.WeekEnd)
+                .ToList();
+
+            // Find already scheduled flight IDs
+            var scheduledFlightIds = schedule.FlightAssignments
+                .Select(fa => fa.Flight.FlightId)
+                .ToHashSet();
+
+            // Find unscheduled flights that are part of a pair
+            var unscheduledPairs = new Dictionary<int, FlightDto>();
+
+            foreach (var flight in weekFlights)
+            {
+                if (!scheduledFlightIds.Contains(flight.FlightId) &&
+                    flight.ReturnFlightId.HasValue &&
+                    !scheduledFlightIds.Contains(flight.ReturnFlightId.Value))
+                {
+                    var returnFlight = allFlights.FirstOrDefault(f => f.FlightId == flight.ReturnFlightId.Value);
+
+                    if (returnFlight != null && returnFlight.DepartureTime < schedule.WeekEnd)
+                    {
+                        unscheduledPairs[flight.FlightId] = returnFlight;
+                    }
+                }
+            }
+
+            if (!unscheduledPairs.Any())
+                return;
+
+            // Try to add one of the unscheduled pairs
+            foreach (var pair in unscheduledPairs)
+            {
+                var outboundFlight = weekFlights.First(f => f.FlightId == pair.Key);
+                var returnFlight = pair.Value;
+
+                var outboundAssignment = new FlightAssignment { Flight = outboundFlight };
+                var returnAssignment = new FlightAssignment { Flight = returnFlight };
+
+                // Find senior steward for both flights
+                var availableSeniors = allStewards
+                    .Where(s => s.Role == "Business" && s.IsSenior &&
+                          s.HasLicenseForAircraft(outboundFlight.AircraftType) &&
+                          s.HasLicenseForAircraft(returnFlight.AircraftType) &&
+                          CanStewardWorkFlight(s, outboundFlight, schedule) &&
+                          CanStewardWorkFlight(s, returnFlight, schedule))
+                    .ToList();
+
+                if (!availableSeniors.Any())
+                    continue;
+
+                // Assign a senior steward to both flights
+                var seniorSteward = availableSeniors[_random.Next(availableSeniors.Count)];
+                outboundAssignment.BusinessStewards.Add(seniorSteward);
+                returnAssignment.BusinessStewards.Add(seniorSteward);
+
+                // Find regular business stewards
+                int businessNeeded = outboundFlight.RequiredBusinessCrew - 1; // -1 for the senior
+
+                var availableBusinessStewards = allStewards
+                    .Where(s => s.Role == "Business" && !s.IsSenior &&
+                          s.HasLicenseForAircraft(outboundFlight.AircraftType) &&
+                          s.HasLicenseForAircraft(returnFlight.AircraftType) &&
+                          CanStewardWorkFlight(s, outboundFlight, schedule) &&
+                          CanStewardWorkFlight(s, returnFlight, schedule))
+                    .Take(businessNeeded)
+                    .ToList();
+
+                // Add business stewards to both flights
+                foreach (var steward in availableBusinessStewards)
+                {
+                    outboundAssignment.BusinessStewards.Add(steward);
+                    returnAssignment.BusinessStewards.Add(steward);
+                }
+
+                // Find economy stewards
+                var availableEconomyStewards = allStewards
+                    .Where(s => s.Role == "Economy" &&
+                          s.HasLicenseForAircraft(outboundFlight.AircraftType) &&
+                          s.HasLicenseForAircraft(returnFlight.AircraftType) &&
+                          CanStewardWorkFlight(s, outboundFlight, schedule) &&
+                          CanStewardWorkFlight(s, returnFlight, schedule))
+                    .Take(outboundFlight.RequiredEconomyCrew)
+                    .ToList();
+
+                // Add economy stewards to both flights
+                foreach (var steward in availableEconomyStewards)
+                {
+                    outboundAssignment.EconomyStewards.Add(steward);
+                    returnAssignment.EconomyStewards.Add(steward);
+                }
+
+                // Add flights if they meet minimum staffing requirements
+                if (outboundAssignment.BusinessStewards.Any(s => s.IsSenior) &&
+                    outboundAssignment.EconomyStewards.Any())
+                {
+                    schedule.FlightAssignments.Add(outboundAssignment);
+                    schedule.FlightAssignments.Add(returnAssignment);
+                    return;
+                }
+            }
+        }
+
+        // Remove a flight pair from the schedule
+        private void MutateByRemovingFlightPair(WeeklySchedule schedule)
+        {
+            if (schedule.FlightAssignments.Count <= 2)
+                return;
+
+            // Get flight pairs
+            var pairMap = GetFlightPairMap(schedule);
+
+            if (!pairMap.Any())
+                return;
+
+            // Pick a random pair
+            int pairIndex = _random.Next(pairMap.Count);
+            var selectedPair = pairMap.ElementAt(pairIndex);
+
+            int outboundId = selectedPair.Key;
+            int returnId = selectedPair.Value.Flight.FlightId;
+
+            // Find and remove both flights
+            var outboundAssignment = schedule.FlightAssignments
+                .FirstOrDefault(fa => fa.Flight.FlightId == outboundId);
+
+            var returnAssignment = schedule.FlightAssignments
+                .FirstOrDefault(fa => fa.Flight.FlightId == returnId);
+
+            if (outboundAssignment != null)
+                schedule.FlightAssignments.Remove(outboundAssignment);
+
+            if (returnAssignment != null)
+                schedule.FlightAssignments.Remove(returnAssignment);
+        }
+
+        #endregion
+
+        #region Helper Methods
 
         // Helper method to check if there are any overlapping flights in the schedule
         private bool HasOverlappingFlights(WeeklySchedule schedule)
@@ -324,787 +1250,51 @@ namespace Scheduler.Core.Algorithms
             return true;
         }
 
-        // Crossover two parent schedules to create a child - improved version
-        private WeeklySchedule Crossover(WeeklySchedule parent1, WeeklySchedule parent2)
+        private FlightAssignment CloneFlightAssignment(FlightAssignment assignment)
         {
-            // Create a new empty schedule
-            var child = new WeeklySchedule
+            var clone = new FlightAssignment
             {
-                WeekStart = parent1.WeekStart,
-                WeekEnd = parent1.WeekEnd
+                Flight = assignment.Flight
             };
 
-            // Get all flight IDs from both parents
-            var allFlightIds = parent1.FlightAssignments
-                .Select(fa => fa.Flight.FlightId)
-                .Union(parent2.FlightAssignments.Select(fa => fa.Flight.FlightId))
-                .Distinct()
-                .ToList();
+            clone.BusinessStewards.AddRange(assignment.BusinessStewards);
+            clone.EconomyStewards.AddRange(assignment.EconomyStewards);
 
-            // Track processed flights to avoid duplicate assignments
-            var processedFlights = new HashSet<int>();
-
-            // Improved crossover strategy - take complete flights from one parent,
-            // and flights that need improvement from the other parent preferentially
-
-            // Determine which parent is better
-            bool parent1IsBetter = parent1.FitnessScore >= parent2.FitnessScore;
-            var betterParent = parent1IsBetter ? parent1 : parent2;
-            var worseParent = parent1IsBetter ? parent2 : parent1;
-
-            foreach (int flightId in allFlightIds)
-            {
-                // Skip if already processed as part of a pair
-                if (processedFlights.Contains(flightId))
-                    continue;
-
-                var betterAssignment = betterParent.FlightAssignments
-                    .FirstOrDefault(fa => fa.Flight.FlightId == flightId);
-
-                var worseAssignment = worseParent.FlightAssignments
-                    .FirstOrDefault(fa => fa.Flight.FlightId == flightId);
-
-                // Decide which parent's assignment to use
-                bool useBetterParent = true;
-
-                // If both parents have this flight, prefer the better parent, but
-                // if the worse parent has a complete assignment and the better doesn't,
-                // use the worse parent's assignment
-                if (betterAssignment != null && worseAssignment != null)
-                {
-                    if (!betterAssignment.IsComplete() && worseAssignment.IsComplete())
-                    {
-                        useBetterParent = false;
-                    }
-                    else if (betterAssignment.IsComplete() && worseAssignment.IsComplete())
-                    {
-                        // Both complete, randomly mix crew members
-                        useBetterParent = _random.NextDouble() < 0.7; // Slight preference for better parent
-                    }
-                    else
-                    {
-                        // Randomly decide, with preference for better parent
-                        useBetterParent = _random.NextDouble() < 0.7;
-                    }
-                }
-                else if (betterAssignment == null && worseAssignment != null)
-                {
-                    useBetterParent = false;
-                }
-                else if (betterAssignment == null && worseAssignment == null)
-                {
-                    continue; // Skip if neither parent has this flight
-                }
-
-                FlightAssignment selectedAssignment = useBetterParent ? betterAssignment : worseAssignment;
-                WeeklySchedule selectedParent = useBetterParent ? betterParent : worseParent;
-
-                // Add this flight's assignment
-                if (selectedAssignment != null)
-                {
-                    child.FlightAssignments.Add(CloneFlightAssignment(selectedAssignment));
-                    processedFlights.Add(flightId);
-
-                    // Handle paired flight if it exists
-                    if (selectedAssignment.Flight.ReturnFlightId.HasValue)
-                    {
-                        var pairedId = selectedAssignment.Flight.ReturnFlightId.Value;
-                        var pairedAssignment = selectedParent.FlightAssignments
-                            .FirstOrDefault(fa => fa.Flight.FlightId == pairedId);
-
-                        if (pairedAssignment != null)
-                        {
-                            child.FlightAssignments.Add(CloneFlightAssignment(pairedAssignment));
-                            processedFlights.Add(pairedId);
-                        }
-                    }
-                }
-            }
-
-            // Mix some crew members between flights for additional diversity - 30% chance
-            if (_random.NextDouble() < 0.3)
-            {
-                // Only attempt this if we have enough flights
-                if (child.FlightAssignments.Count >= 2)
-                {
-                    int tries = Math.Min(5, child.FlightAssignments.Count);
-
-                    for (int i = 0; i < tries; i++)
-                    {
-                        int idx1 = _random.Next(child.FlightAssignments.Count);
-                        int idx2 = _random.Next(child.FlightAssignments.Count);
-
-                        // Ensure different flights
-                        if (idx1 != idx2)
-                        {
-                            var flight1 = child.FlightAssignments[idx1];
-                            var flight2 = child.FlightAssignments[idx2];
-
-                            // Try to swap an economy steward
-                            if (flight1.EconomyStewards.Count > 0 && flight2.EconomyStewards.Count > 0)
-                            {
-                                int steward1Idx = _random.Next(flight1.EconomyStewards.Count);
-                                int steward2Idx = _random.Next(flight2.EconomyStewards.Count);
-
-                                var steward1 = flight1.EconomyStewards[steward1Idx];
-                                var steward2 = flight2.EconomyStewards[steward2Idx];
-
-                                // Swap if both stewards have license for both aircraft
-                                if (steward1.HasLicenseForAircraft(flight2.Flight.AircraftType) &&
-                                    steward2.HasLicenseForAircraft(flight1.Flight.AircraftType))
-                                {
-                                    flight1.EconomyStewards.RemoveAt(steward1Idx);
-                                    flight2.EconomyStewards.RemoveAt(steward2Idx);
-
-                                    flight1.EconomyStewards.Add(steward2);
-                                    flight2.EconomyStewards.Add(steward1);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Rebuild steward schedules
-            RebuildStewardSchedules(child);
-
-            return child;
+            return clone;
         }
 
-        private WeeklySchedule Mutate(WeeklySchedule schedule, List<FlightDto> allFlights, List<StewardDto> allStewards, float mutationRate = 0.0f)
+        private List<StewardDto> DeepCopyStewards(List<StewardDto> stewards)
         {
-            // If schedule has no flights, don't try to mutate
-            if (schedule.FlightAssignments.Count == 0)
-                return schedule;
+            var copies = new List<StewardDto>();
 
-            // Apply multiple mutations based on mutationRate
-            int mutations = 1 + (int)(mutationRate * 3); // At least 1, up to 4 mutations
-
-            for (int m = 0; m < mutations; m++)
+            foreach (var steward in stewards)
             {
-                // Choose a mutation type with different probabilities
-                double randomValue = _random.NextDouble();
+                var copy = new StewardDto
+                {
+                    StewardId = steward.StewardId,
+                    FirstName = steward.FirstName,
+                    LastName = steward.LastName,
+                    Role = steward.Role,
+                    IsSenior = steward.IsSenior,
+                    JoiningDate = steward.JoiningDate,
+                    LastFlightEndTime = steward.LastFlightEndTime,
+                    MonthlyHours = steward.MonthlyHours,
+                    PositiveFeedbackCount = steward.PositiveFeedbackCount,
+                    NegativeFeedbackCount = steward.NegativeFeedbackCount
+                };
 
-                try
+                copy.LicenseIds.AddRange(steward.LicenseIds);
+                copy.LanguageIds.AddRange(steward.LanguageIds);
+
+                if (steward.LicensedAircraftTypes != null)
                 {
-                    if (randomValue < 0.4) // 40% chance
-                    {
-                        // Swap two stewards between flights
-                        MutateByStewardSwap(schedule);
-                    }
-                    else if (randomValue < 0.7) // 30% chance
-                    {
-                        // Replace a steward with another qualified one
-                        MutateByReplacement(schedule, allStewards);
-                    }
-                    else if (randomValue < 0.9) // 20% chance
-                    {
-                        // Add a flight that's not currently in the schedule
-                        MutateByAddingFlight(schedule, allFlights, allStewards);
-                    }
-                    else // 10% chance
-                    {
-                        // Remove a flight from the schedule (more dramatic change)
-                        MutateByRemovingFlight(schedule);
-                    }
+                    copy.LicensedAircraftTypes = new List<string>(steward.LicensedAircraftTypes);
                 }
-                catch (Exception ex)
-                {
-                    // Log the error but continue with other mutations
-                    Console.WriteLine($"Mutation error: {ex.Message}");
-                }
+
+                copies.Add(copy);
             }
 
-            // Rebuild steward schedules
-            RebuildStewardSchedules(schedule);
-
-            return schedule;
-        }
-
-        // New mutation method to remove a flight
-        private void MutateByRemovingFlight(WeeklySchedule schedule)
-        {
-            if (schedule.FlightAssignments.Count <= 2)
-                return; // Don't remove if we have very few flights
-
-            // Select a random flight to remove, prioritizing incomplete flights
-            var incompleteFlights = schedule.FlightAssignments.Where(fa => !fa.IsComplete()).ToList();
-
-            if (incompleteFlights.Count > 0 && _random.NextDouble() < 0.7)
-            {
-                // 70% chance to remove an incomplete flight
-                int idx = _random.Next(incompleteFlights.Count);
-                var flightToRemove = incompleteFlights[idx];
-
-                // Find and remove the flight
-                schedule.FlightAssignments.Remove(flightToRemove);
-
-                // If it has a return flight, remove that too
-                if (flightToRemove.Flight.ReturnFlightId.HasValue)
-                {
-                    var returnFlightId = flightToRemove.Flight.ReturnFlightId.Value;
-                    var returnFlight = schedule.FlightAssignments
-                        .FirstOrDefault(fa => fa.Flight.FlightId == returnFlightId);
-
-                    if (returnFlight != null)
-                    {
-                        schedule.FlightAssignments.Remove(returnFlight);
-                    }
-                }
-            }
-            else if (schedule.FlightAssignments.Count > 0)
-            {
-                // Otherwise remove a random flight
-                int idx = _random.Next(schedule.FlightAssignments.Count);
-                var flightToRemove = schedule.FlightAssignments[idx];
-
-                // Find and remove the flight
-                schedule.FlightAssignments.Remove(flightToRemove);
-
-                // If it has a return flight, remove that too
-                if (flightToRemove.Flight.ReturnFlightId.HasValue)
-                {
-                    var returnFlightId = flightToRemove.Flight.ReturnFlightId.Value;
-                    var returnFlight = schedule.FlightAssignments
-                        .FirstOrDefault(fa => fa.Flight.FlightId == returnFlightId);
-
-                    if (returnFlight != null)
-                    {
-                        schedule.FlightAssignments.Remove(returnFlight);
-                    }
-                }
-            }
-        }
-
-        // Swap stewards between flights
-        private void MutateByStewardSwap(WeeklySchedule schedule)
-        {
-            if (schedule.FlightAssignments.Count < 2)
-                return;
-
-            // Attempt several times to find a valid swap
-            for (int attempt = 0; attempt < 5; attempt++)
-            {
-                // Pick two random flights
-                int idx1 = _random.Next(schedule.FlightAssignments.Count);
-                int idx2 = _random.Next(schedule.FlightAssignments.Count);
-
-                // Make sure they're different
-                int subAttempts = 0;
-                while (idx1 == idx2 && subAttempts < 5)
-                {
-                    idx2 = _random.Next(schedule.FlightAssignments.Count);
-                    subAttempts++;
-                }
-
-                if (idx1 == idx2)
-                    continue; // Try another main attempt
-
-                var flight1 = schedule.FlightAssignments[idx1];
-                var flight2 = schedule.FlightAssignments[idx2];
-
-                // If either flight is part of a pair, we need to find and handle both flights in the pair
-                var flight1Pair = schedule.FlightAssignments
-                    .FirstOrDefault(fa => flight1.Flight.ReturnFlightId.HasValue &&
-                                         fa.Flight.FlightId == flight1.Flight.ReturnFlightId.Value);
-
-                var flight2Pair = schedule.FlightAssignments
-                    .FirstOrDefault(fa => flight2.Flight.ReturnFlightId.HasValue &&
-                                         fa.Flight.FlightId == flight2.Flight.ReturnFlightId.Value);
-
-                // Choose whether to swap business or economy stewards
-                bool swapBusiness = _random.NextDouble() < 0.5;
-
-                if (swapBusiness)
-                {
-                    if (flight1.BusinessStewards.Count > 0 && flight2.BusinessStewards.Count > 0)
-                    {
-                        // Don't swap senior stewards to avoid issues
-                        var nonSenior1 = flight1.BusinessStewards.Where(s => !s.IsSenior).ToList();
-                        var nonSenior2 = flight2.BusinessStewards.Where(s => !s.IsSenior).ToList();
-
-                        if (nonSenior1.Any() && nonSenior2.Any())
-                        {
-                            // Pick random non-senior stewards from each flight
-                            int stewardIdx1 = _random.Next(nonSenior1.Count);
-                            int stewardIdx2 = _random.Next(nonSenior2.Count);
-
-                            var steward1 = nonSenior1[stewardIdx1];
-                            var steward2 = nonSenior2[stewardIdx2];
-
-                            // Check if stewards can work the other flights without conflicts
-                            bool steward1CanWorkFlight2 = CanStewardWorkFlight(steward1, flight2.Flight, schedule) &&
-                                                         steward1.HasLicenseForAircraft(flight2.Flight.AircraftType);
-                            bool steward2CanWorkFlight1 = CanStewardWorkFlight(steward2, flight1.Flight, schedule) &&
-                                                         steward2.HasLicenseForAircraft(flight1.Flight.AircraftType);
-
-                            // If paired flights exist, check those too
-                            if (flight1Pair != null)
-                            {
-                                steward2CanWorkFlight1 = steward2CanWorkFlight1 &&
-                                    CanStewardWorkFlight(steward2, flight1Pair.Flight, schedule) &&
-                                    steward2.HasLicenseForAircraft(flight1Pair.Flight.AircraftType);
-                            }
-
-                            if (flight2Pair != null)
-                            {
-                                steward1CanWorkFlight2 = steward1CanWorkFlight2 &&
-                                    CanStewardWorkFlight(steward1, flight2Pair.Flight, schedule) &&
-                                    steward1.HasLicenseForAircraft(flight2Pair.Flight.AircraftType);
-                            }
-
-                            // Only perform swap if it doesn't create conflicts
-                            if (steward1CanWorkFlight2 && steward2CanWorkFlight1)
-                            {
-                                // Remove steward1 from flight1
-                                flight1.BusinessStewards.Remove(steward1);
-                                // Remove steward2 from flight2
-                                flight2.BusinessStewards.Remove(steward2);
-
-                                // Add steward2 to flight1
-                                flight1.BusinessStewards.Add(steward2);
-                                // Add steward1 to flight2
-                                flight2.BusinessStewards.Add(steward1);
-
-                                // If these flights are part of pairs, update those too
-                                if (flight1Pair != null)
-                                {
-                                    flight1Pair.BusinessStewards.Remove(steward1);
-                                    flight1Pair.BusinessStewards.Add(steward2);
-                                }
-
-                                if (flight2Pair != null)
-                                {
-                                    flight2Pair.BusinessStewards.Remove(steward2);
-                                    flight2Pair.BusinessStewards.Add(steward1);
-                                }
-
-                                // Successful swap, exit the attempt loop
-                                return;
-                            }
-                        }
-                    }
-                }
-                else // Swap economy stewards
-                {
-                    if (flight1.EconomyStewards.Count > 0 && flight2.EconomyStewards.Count > 0)
-                    {
-                        // Pick random stewards from each flight
-                        int stewardIdx1 = _random.Next(flight1.EconomyStewards.Count);
-                        int stewardIdx2 = _random.Next(flight2.EconomyStewards.Count);
-
-                        var steward1 = flight1.EconomyStewards[stewardIdx1];
-                        var steward2 = flight2.EconomyStewards[stewardIdx2];
-
-                        // Check if stewards can work the other flights without conflicts
-                        bool steward1CanWorkFlight2 = CanStewardWorkFlight(steward1, flight2.Flight, schedule) &&
-                                                     steward1.HasLicenseForAircraft(flight2.Flight.AircraftType);
-                        bool steward2CanWorkFlight1 = CanStewardWorkFlight(steward2, flight1.Flight, schedule) &&
-                                                     steward2.HasLicenseForAircraft(flight1.Flight.AircraftType);
-
-                        // If paired flights exist, check those too
-                        if (flight1Pair != null)
-                        {
-                            steward2CanWorkFlight1 = steward2CanWorkFlight1 &&
-                                CanStewardWorkFlight(steward2, flight1Pair.Flight, schedule) &&
-                                steward2.HasLicenseForAircraft(flight1Pair.Flight.AircraftType);
-                        }
-
-                        if (flight2Pair != null)
-                        {
-                            steward1CanWorkFlight2 = steward1CanWorkFlight2 &&
-                                CanStewardWorkFlight(steward1, flight2Pair.Flight, schedule) &&
-                                steward1.HasLicenseForAircraft(flight2Pair.Flight.AircraftType);
-                        }
-
-                        // Only perform swap if it doesn't create conflicts
-                        if (steward1CanWorkFlight2 && steward2CanWorkFlight1)
-                        {
-                            // Remove steward1 from flight1
-                            flight1.EconomyStewards.Remove(steward1);
-                            // Remove steward2 from flight2
-                            flight2.EconomyStewards.Remove(steward2);
-
-                            // Add steward2 to flight1
-                            flight1.EconomyStewards.Add(steward2);
-                            // Add steward1 to flight2
-                            flight2.EconomyStewards.Add(steward1);
-
-                            // If these flights are part of pairs, update those too
-                            if (flight1Pair != null)
-                            {
-                                flight1Pair.EconomyStewards.Remove(steward1);
-                                flight1Pair.EconomyStewards.Add(steward2);
-                            }
-
-                            if (flight2Pair != null)
-                            {
-                                flight2Pair.EconomyStewards.Remove(steward2);
-                                flight2Pair.EconomyStewards.Add(steward1);
-                            }
-
-                            // Successful swap, exit the attempt loop
-                            return;
-                        }
-                    }
-                }
-            }
-        }
-
-        // Replace a steward with another not in the schedule
-        private void MutateByReplacement(WeeklySchedule schedule, List<StewardDto> allStewards)
-        {
-            if (schedule.FlightAssignments.Count == 0)
-                return;
-
-            // Try several attempts to find a valid replacement
-            for (int attempt = 0; attempt < 5; attempt++)
-            {
-                // Pick a random flight, with higher chance for incomplete flights
-                List<FlightAssignment> candidateFlights = schedule.FlightAssignments;
-                var incompleteFlights = schedule.FlightAssignments.Where(fa => !fa.IsComplete()).ToList();
-
-                int flightIdx;
-
-                if (incompleteFlights.Count > 0 && _random.NextDouble() < 0.7)
-                {
-                    // Higher chance to select an incomplete flight
-                    flightIdx = schedule.FlightAssignments.IndexOf(incompleteFlights[_random.Next(incompleteFlights.Count)]);
-                }
-                else
-                {
-                    // Random flight
-                    flightIdx = _random.Next(schedule.FlightAssignments.Count);
-                }
-
-                var flightAssignment = schedule.FlightAssignments[flightIdx];
-
-                // Find paired flight if it exists
-                var pairedAssignment = schedule.FlightAssignments
-                    .FirstOrDefault(fa => flightAssignment.Flight.ReturnFlightId.HasValue &&
-                                         fa.Flight.FlightId == flightAssignment.Flight.ReturnFlightId.Value);
-
-                // Choose whether to replace business or economy steward
-                bool replaceBusiness = _random.NextDouble() < 0.5;
-
-                if (replaceBusiness && flightAssignment.BusinessStewards.Count > 0)
-                {
-                    // Don't replace senior stewards if there's only one
-                    var nonSeniorStewards = flightAssignment.BusinessStewards
-                        .Where(s => !s.IsSenior || flightAssignment.BusinessStewards.Count(bs => bs.IsSenior) > 1)
-                        .ToList();
-
-                    if (nonSeniorStewards.Count == 0)
-                        continue;
-
-                    // Pick a random steward to replace
-                    int stewardIdx = _random.Next(nonSeniorStewards.Count);
-                    var stewardToReplace = nonSeniorStewards[stewardIdx];
-
-                    // Find a replacement from all business stewards not in this flight
-                    // and who have the proper license for this aircraft type
-                    var possibleReplacements = allStewards
-                        .Where(s => s.Role == "Business" &&
-                                  !flightAssignment.BusinessStewards.Any(bs => bs.StewardId == s.StewardId) &&
-                                  s.HasLicenseForAircraft(flightAssignment.Flight.AircraftType) &&
-                                  !HasScheduleConflict(s, flightAssignment.Flight, pairedAssignment?.Flight, schedule))
-                        .ToList();
-
-                    // For senior replacement, we need to ensure the replacement is also senior
-                    if (stewardToReplace.IsSenior)
-                    {
-                        possibleReplacements = possibleReplacements.Where(s => s.IsSenior).ToList();
-                    }
-
-                    if (possibleReplacements.Count > 0)
-                    {
-                        // Find a replacement that can work this flight without conflicts
-                        var validReplacements = possibleReplacements
-                            .Where(s => CanStewardWorkFlight(s, flightAssignment.Flight, schedule))
-                            .ToList();
-
-                        // If there's a paired flight, also check that the steward can work that
-                        if (pairedAssignment != null && validReplacements.Count > 0)
-                        {
-                            validReplacements = validReplacements
-                                .Where(s => CanStewardWorkFlight(s, pairedAssignment.Flight, schedule))
-                                .ToList();
-                        }
-
-                        if (validReplacements.Count > 0)
-                        {
-                            int replacementIdx = _random.Next(validReplacements.Count);
-                            var replacement = validReplacements[replacementIdx];
-
-                            // Replace in the flight assignment
-                            flightAssignment.BusinessStewards.Remove(stewardToReplace);
-                            flightAssignment.BusinessStewards.Add(replacement);
-
-                            // Replace in paired flight if it exists
-                            if (pairedAssignment != null)
-                            {
-                                pairedAssignment.BusinessStewards.Remove(stewardToReplace);
-                                pairedAssignment.BusinessStewards.Add(replacement);
-                            }
-
-                            // Successful replacement, exit the attempt loop
-                            return;
-                        }
-                    }
-                }
-                else if (!replaceBusiness && flightAssignment.EconomyStewards.Count > 0)
-                {
-                    // Pick a random steward to replace
-                    int stewardIdx = _random.Next(flightAssignment.EconomyStewards.Count);
-                    var stewardToReplace = flightAssignment.EconomyStewards[stewardIdx];
-
-                    // Find a replacement from all economy stewards not in this flight
-                    // and who have the proper license for this aircraft type
-                    var possibleReplacements = allStewards
-                        .Where(s => s.Role == "Economy" &&
-                                  !flightAssignment.EconomyStewards.Any(es => es.StewardId == s.StewardId) &&
-                                  s.HasLicenseForAircraft(flightAssignment.Flight.AircraftType) &&
-                                  !HasScheduleConflict(s, flightAssignment.Flight, pairedAssignment?.Flight, schedule))
-                        .ToList();
-
-                    if (possibleReplacements.Count > 0)
-                    {
-                        // Find a replacement that can work this flight without conflicts
-                        var validReplacements = possibleReplacements
-                            .Where(s => CanStewardWorkFlight(s, flightAssignment.Flight, schedule))
-                            .ToList();
-
-                        // If there's a paired flight, also check that the steward can work that
-                        if (pairedAssignment != null && validReplacements.Count > 0)
-                        {
-                            validReplacements = validReplacements
-                                .Where(s => CanStewardWorkFlight(s, pairedAssignment.Flight, schedule))
-                                .ToList();
-                        }
-
-                        if (validReplacements.Count > 0)
-                        {
-                            int replacementIdx = _random.Next(validReplacements.Count);
-                            var replacement = validReplacements[replacementIdx];
-
-                            // Replace in the flight assignment
-                            flightAssignment.EconomyStewards.Remove(stewardToReplace);
-                            flightAssignment.EconomyStewards.Add(replacement);
-
-                            // Replace in paired flight if it exists
-                            if (pairedAssignment != null)
-                            {
-                                pairedAssignment.EconomyStewards.Remove(stewardToReplace);
-                                pairedAssignment.EconomyStewards.Add(replacement);
-                            }
-
-                            // Successful replacement, exit the attempt loop
-                            return;
-                        }
-                    }
-                }
-            }
-        }
-
-        // Add a flight that's not currently in the schedule
-        private void MutateByAddingFlight(WeeklySchedule schedule, List<FlightDto> allFlights, List<StewardDto> allStewards)
-        {
-            // Get all flights from the current week
-            var weekFlights = allFlights
-                .Where(f => f.DepartureTime >= schedule.WeekStart &&
-                           f.DepartureTime < schedule.WeekEnd)
-                .ToList();
-
-            // Find flights that are in the current week but not in the schedule
-            var scheduledFlightIds = schedule.FlightAssignments
-                .Select(fa => fa.Flight.FlightId)
-                .ToHashSet();
-
-            var unscheduledFlights = weekFlights
-                .Where(f => !scheduledFlightIds.Contains(f.FlightId))
-                .ToList();
-
-            if (unscheduledFlights.Count == 0)
-                return;
-
-            // Try several unscheduled flights until we find one we can successfully add
-            for (int attempt = 0; attempt < 5 && attempt < unscheduledFlights.Count; attempt++)
-            {
-                // Pick a random unscheduled flight
-                int flightIdx = _random.Next(unscheduledFlights.Count);
-                var flightToAdd = unscheduledFlights[flightIdx];
-
-                // Check if it has a return flight also unscheduled
-                FlightDto returnFlightToAdd = null;
-                if (flightToAdd.ReturnFlightId.HasValue)
-                {
-                    returnFlightToAdd = allFlights
-                        .FirstOrDefault(f => f.FlightId == flightToAdd.ReturnFlightId.Value &&
-                                          !scheduledFlightIds.Contains(f.FlightId));
-                }
-
-                // Create new flight assignments
-                var newAssignment = new FlightAssignment { Flight = flightToAdd };
-                FlightAssignment returnAssignment = null;
-
-                if (returnFlightToAdd != null)
-                {
-                    returnAssignment = new FlightAssignment { Flight = returnFlightToAdd };
-                }
-
-                // Calculate current hours for each steward
-                var stewardHours = allStewards.ToDictionary(
-                    s => s.StewardId,
-                    s => schedule.StewardSchedules.ContainsKey(s.StewardId)
-                        ? schedule.StewardSchedules[s.StewardId].Sum(f => f.FlightTime) + s.MonthlyHours
-                        : s.MonthlyHours);
-
-                // Find available senior stewards for business class
-                var availableSeniors = allStewards
-                    .Where(s => s.Role == "Business" && s.IsSenior &&
-                              stewardHours.GetValueOrDefault(s.StewardId, 0) + flightToAdd.FlightTime +
-                                 (returnFlightToAdd?.FlightTime ?? 0) <= 90 &&
-                              s.HasLicenseForAircraft(flightToAdd.AircraftType) &&
-                              !HasScheduleConflict(s, flightToAdd, returnFlightToAdd, schedule))
-                    .ToList();
-
-                if (availableSeniors.Count == 0)
-                    continue; // Can't staff this flight without a senior steward
-
-                // Filter seniors who can actually work this flight without conflicts
-                var validSeniors = availableSeniors
-                    .Where(s => CanStewardWorkFlight(s, flightToAdd, schedule))
-                    .ToList();
-
-                // If there's a return flight, also check if the steward can work that
-                if (returnFlightToAdd != null && validSeniors.Count > 0)
-                {
-                    validSeniors = validSeniors
-                        .Where(s => CanStewardWorkFlight(s, returnFlightToAdd, schedule))
-                        .ToList();
-                }
-
-                if (validSeniors.Count == 0)
-                    continue;
-
-                // Assign a senior steward
-                var seniorSteward = validSeniors[_random.Next(validSeniors.Count)];
-                newAssignment.BusinessStewards.Add(seniorSteward);
-
-                if (returnAssignment != null)
-                {
-                    returnAssignment.BusinessStewards.Add(seniorSteward);
-                }
-
-                // Find regular business stewards
-                int remainingBusinessNeeded = flightToAdd.RequiredBusinessCrew - 1; // We already added a senior
-
-                List<StewardDto> selectedBusinessStewards = new List<StewardDto>();
-
-                if (remainingBusinessNeeded > 0)
-                {
-                    var availableBusinessStewards = allStewards
-                        .Where(s => s.Role == "Business" && !s.IsSenior &&
-                                 stewardHours.GetValueOrDefault(s.StewardId, 0) + flightToAdd.FlightTime +
-                                    (returnFlightToAdd?.FlightTime ?? 0) <= 90 &&
-                                 s.HasLicenseForAircraft(flightToAdd.AircraftType) &&
-                                 !HasScheduleConflict(s, flightToAdd, returnFlightToAdd, schedule))
-                        .Take(remainingBusinessNeeded)
-                        .ToList();
-
-                    // Filter to those who can actually work these flights without conflicts
-                    var validBusinessStewards = availableBusinessStewards
-                        .Where(s => CanStewardWorkFlight(s, flightToAdd, schedule))
-                        .ToList();
-
-                    // If there's a return flight, also check if the stewards can work that
-                    if (returnFlightToAdd != null && validBusinessStewards.Count > 0)
-                    {
-                        validBusinessStewards = validBusinessStewards
-                            .Where(s => CanStewardWorkFlight(s, returnFlightToAdd, schedule))
-                            .ToList();
-                    }
-
-                    // Get as many as needed, or as many as available
-                    selectedBusinessStewards = validBusinessStewards
-                        .Take(remainingBusinessNeeded)
-                        .ToList();
-
-                    // Add them to the assignment
-                    foreach (var steward in selectedBusinessStewards)
-                    {
-                        newAssignment.BusinessStewards.Add(steward);
-
-                        if (returnAssignment != null)
-                        {
-                            returnAssignment.BusinessStewards.Add(steward);
-                        }
-                    }
-                }
-
-                // Find economy stewards
-                int economyNeeded = flightToAdd.RequiredEconomyCrew;
-                List<StewardDto> selectedEconomyStewards = new List<StewardDto>();
-
-                if (economyNeeded > 0)
-                {
-                    var availableEconomyStewards = allStewards
-                        .Where(s => s.Role == "Economy" &&
-                                 stewardHours.GetValueOrDefault(s.StewardId, 0) + flightToAdd.FlightTime +
-                                    (returnFlightToAdd?.FlightTime ?? 0) <= 90 &&
-                                 s.HasLicenseForAircraft(flightToAdd.AircraftType) &&
-                                 !HasScheduleConflict(s, flightToAdd, returnFlightToAdd, schedule))
-                        .Take(economyNeeded)
-                        .ToList();
-
-                    // Filter to those who can actually work these flights without conflicts
-                    var validEconomyStewards = availableEconomyStewards
-                        .Where(s => CanStewardWorkFlight(s, flightToAdd, schedule))
-                        .ToList();
-
-                    // If there's a return flight, also check if the stewards can work that
-                    if (returnFlightToAdd != null && validEconomyStewards.Count > 0)
-                    {
-                        validEconomyStewards = validEconomyStewards
-                            .Where(s => CanStewardWorkFlight(s, returnFlightToAdd, schedule))
-                            .ToList();
-                    }
-
-                    // Get as many as needed, or as many as available
-                    selectedEconomyStewards = validEconomyStewards
-                        .Take(economyNeeded)
-                        .ToList();
-
-                    // Add them to the assignment
-                    foreach (var steward in selectedEconomyStewards)
-                    {
-                        newAssignment.EconomyStewards.Add(steward);
-
-                        if (returnAssignment != null)
-                        {
-                            returnAssignment.EconomyStewards.Add(steward);
-                        }
-                    }
-                }
-
-                // Only add the flight if we have a senior steward and at least one economy steward
-                // (minimum staffing requirements)
-                if (newAssignment.BusinessStewards.Any(s => s.IsSenior) &&
-                    newAssignment.EconomyStewards.Any())
-                {
-                    schedule.FlightAssignments.Add(newAssignment);
-
-                    if (returnAssignment != null &&
-                        returnAssignment.BusinessStewards.Any(s => s.IsSenior) &&
-                        returnAssignment.EconomyStewards.Any())
-                    {
-                        schedule.FlightAssignments.Add(returnAssignment);
-                    }
-
-                    // Successful addition, exit the attempt loop
-                    return;
-                }
-            }
+            return copies;
         }
 
         // Rebuild steward schedules after modifications
@@ -1159,104 +1349,6 @@ namespace Scheduler.Core.Algorithms
             }
         }
 
-        // Helper methods
-        private bool HasScheduleConflict(StewardDto steward, FlightDto flight, FlightDto returnFlight,
-                               WeeklySchedule schedule)
-        {
-            // If steward isn't scheduled yet, they're available (subject to license/rest checks)
-            if (!schedule.StewardSchedules.TryGetValue(steward.StewardId, out var existingFlights))
-                return false;
-
-            // Check last flight end time for rest requirements
-            if (steward.LastFlightEndTime.HasValue)
-            {
-                TimeSpan restTime = flight.DepartureTime - steward.LastFlightEndTime.Value;
-                if (restTime.TotalHours < 12)
-                    return true; // Conflict - not enough rest
-            }
-
-            // Check for overlap with existing flights
-            foreach (var existingFlight in existingFlights)
-            {
-                // Check for direct time overlap
-                if (DoFlightsOverlap(existingFlight, flight))
-                    return true; // Conflict - flights overlap
-
-                // Check for sufficient rest between flights
-                if (!HasEnoughRestBetween(existingFlight, flight))
-                    return true; // Conflict - not enough rest
-
-                // If there's a return flight, also check it
-                if (returnFlight != null)
-                {
-                    if (DoFlightsOverlap(existingFlight, returnFlight))
-                        return true; // Conflict with return flight
-
-                    if (!HasEnoughRestBetween(existingFlight, returnFlight))
-                        return true; // Not enough rest before return flight
-                }
-            }
-
-            // If there's a return flight, check if it has sufficient time after the outbound flight
-            if (returnFlight != null)
-            {
-                TimeSpan timeBetweenFlights = returnFlight.DepartureTime - flight.ArrivalTime;
-                if (timeBetweenFlights.TotalHours < 0)
-                    return true; // Return flight departs before outbound flight arrives
-
-                // Also ensure the flights don't overlap
-                if (DoFlightsOverlap(flight, returnFlight))
-                    return true;
-            }
-
-            return false; // No conflicts found
-        }
-
-        private FlightAssignment CloneFlightAssignment(FlightAssignment assignment)
-        {
-            var clone = new FlightAssignment
-            {
-                Flight = assignment.Flight
-            };
-
-            clone.BusinessStewards.AddRange(assignment.BusinessStewards);
-            clone.EconomyStewards.AddRange(assignment.EconomyStewards);
-
-            return clone;
-        }
-
-        private List<StewardDto> DeepCopyStewards(List<StewardDto> stewards)
-        {
-            var copies = new List<StewardDto>();
-
-            foreach (var steward in stewards)
-            {
-                var copy = new StewardDto
-                {
-                    StewardId = steward.StewardId,
-                    FirstName = steward.FirstName,
-                    LastName = steward.LastName,
-                    Role = steward.Role,
-                    IsSenior = steward.IsSenior,
-                    JoiningDate = steward.JoiningDate,
-                    LastFlightEndTime = steward.LastFlightEndTime,
-                    MonthlyHours = steward.MonthlyHours,
-                    PositiveFeedbackCount = steward.PositiveFeedbackCount,
-                    NegativeFeedbackCount = steward.NegativeFeedbackCount
-                };
-
-                copy.LicenseIds.AddRange(steward.LicenseIds);
-                copy.LanguageIds.AddRange(steward.LanguageIds);
-
-                if (steward.LicensedAircraftTypes != null)
-                {
-                    copy.LicensedAircraftTypes = new List<string>(steward.LicensedAircraftTypes);
-                }
-
-                copies.Add(copy);
-            }
-
-            return copies;
-        }
+        #endregion
     }
 }
