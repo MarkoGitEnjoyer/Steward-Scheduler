@@ -64,63 +64,7 @@ namespace Scheduler.Core.Algorithms
 
             Console.WriteLine($"Generated {population.Count} valid and diverse initial schedules");
 
-            // Ensure we have enough valid schedules
-            while (population.Count < _config.PopulationSize)
-            {
-                // If we have some valid schedules, use them as templates with slight modifications
-                if (population.Count > 0)
-                {
-                    // Get a random schedule
-                    var baseSchedule = population[_random.Next(population.Count)];
-
-                    // Clone it for safety
-                    var newSchedule = baseSchedule.Clone();
-
-                    // Apply very small mutations that preserve flight pairs
-                    newSchedule = MutatePreservingPairs(newSchedule, flights, stewards);
-
-                    // Only add if it's valid and not too similar to existing schedules
-                    if (HasValidFlightPairs(newSchedule) && !HasOverlappingFlights(newSchedule) &&
-                        !population.Any(p => AreSchedulesSimilar(p, newSchedule, 0.9f)))
-                    {
-                        newSchedule.FitnessScore = FitnessCalculator.CalculateScheduleFitness(newSchedule, stewards);
-                        population.Add(newSchedule);
-                    }
-                }
-                else
-                {
-                    // If we couldn't generate any valid schedules, try the PriorityScheduler again with different weights
-                    var newWeights = new SchedulingWeights
-                    {
-                        ExperienceWeight = (float)_random.NextDouble(),
-                        FeedbackWeight = (float)_random.NextDouble(),
-                        WorkloadBalanceWeight = (float)_random.NextDouble(),
-                        LanguageWeight = (float)_random.NextDouble()
-                    };
-
-                    // Normalize the weights
-                    float sum = newWeights.ExperienceWeight + newWeights.FeedbackWeight +
-                                newWeights.WorkloadBalanceWeight + newWeights.LanguageWeight;
-
-                    newWeights.ExperienceWeight /= sum;
-                    newWeights.FeedbackWeight /= sum;
-                    newWeights.WorkloadBalanceWeight /= sum;
-                    newWeights.LanguageWeight /= sum;
-
-                    var stewardsCopy = DeepCopyStewards(stewards);
-
-                    var schedule = priorityScheduler.GenerateSchedule(flights, stewardsCopy, weekStart, newWeights);
-
-                    priorityScheduler.ImproveSchedule(schedule, stewardsCopy);
-
-                    if (HasValidFlightPairs(schedule) && !HasOverlappingFlights(schedule))
-                    {
-                        schedule.FitnessScore = FitnessCalculator.CalculateScheduleFitness(schedule, stewards);
-                        population.Add(schedule);
-                    }
-                }
-            }
-
+           
             // Log fitness scores of initial population
             Console.WriteLine("Initial population fitness scores:");
             foreach (var schedule in population.OrderByDescending(s => s.FitnessScore))

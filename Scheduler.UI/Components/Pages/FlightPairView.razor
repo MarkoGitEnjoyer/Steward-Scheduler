@@ -1,0 +1,377 @@
+﻿@using Scheduler.Core.Models
+
+<div class="flight-pair @(IsCompact ? "compact" : "")">
+    @if (OutboundFlight != null && ReturnFlight != null)
+    {
+        <div class="flight-pair-container">
+            <div class="flight-card outbound @(OutboundFlight.IsComplete() ? "complete" : "incomplete")">
+                <div class="flight-header">
+                    <div class="flight-direction">
+                        <span class="badge bg-primary"><i class="oi oi-arrow-right"></i> Outbound</span>
+                    </div>
+                    <div class="flight-number">@OutboundFlight.Flight.FlightNumber</div>
+                </div>
+                <div class="flight-details">
+                    <div class="flight-time">
+                        <div><strong>Departure:</strong> @OutboundFlight.Flight.DepartureTime.ToString("ddd, MMM d HH:mm")</div>
+                        <div><strong>Arrival:</strong> @OutboundFlight.Flight.ArrivalTime.ToString("ddd, MMM d HH:mm")</div>
+                    </div>
+                    <div class="flight-destination">
+                        <div><strong>Destination:</strong> @OutboundFlight.Flight.Destination</div>
+                        <div><strong>Aircraft:</strong> @OutboundFlight.Flight.AircraftType</div>
+                    </div>
+                </div>
+                @if (!IsCompact)
+                {
+                    <div class="crew-details">
+                        <div class="business-crew">
+                            <h6>Business Class (@OutboundFlight.BusinessStewards.Count/@OutboundFlight.Flight.RequiredBusinessCrew)</h6>
+                            @if (OutboundFlight.BusinessStewards.Any())
+                            {
+                                <ul class="crew-list">
+                                    @foreach (var steward in OutboundFlight.BusinessStewards)
+                                    {
+                                        <li>
+                                            @steward.FullName
+                                            @if (steward.IsSenior)
+                                            {
+                                                <span class="badge bg-danger ms-1">Senior</span>
+                                            }
+                                        </li>
+                                    }
+                                </ul>
+                            }
+                            else
+                            {
+                                <div class="text-danger">Not assigned</div>
+                            }
+                        </div>
+                        <div class="economy-crew">
+                            <h6>Economy Class (@OutboundFlight.EconomyStewards.Count/@OutboundFlight.Flight.RequiredEconomyCrew)</h6>
+                            @if (OutboundFlight.EconomyStewards.Any())
+                            {
+                                <ul class="crew-list">
+                                    @foreach (var steward in OutboundFlight.EconomyStewards)
+                                    {
+                                        <li>@steward.FullName</li>
+                                    }
+                                </ul>
+                            }
+                            else
+                            {
+                                <div class="text-danger">Not assigned</div>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+
+            <div class="flight-pair-connector">
+                <div class="connector-line"></div>
+                <div class="connector-icon">
+                    <i class="oi oi-loop-circular"></i>
+                </div>
+                @if (!IsCompact)
+                {
+                    <div class="connector-details">
+                        <div class="layover-time">
+                            @{
+                                var layoverTime = ReturnFlight.Flight.DepartureTime - OutboundFlight.Flight.ArrivalTime;
+                                var layoverHours = (int)layoverTime.TotalHours;
+                                var layoverMinutes = layoverTime.Minutes;
+                            }
+                            Layover: @layoverHours h @layoverMinutes min
+                        </div>
+                    </div>
+                }
+            </div>
+
+            <div class="flight-card return @(ReturnFlight.IsComplete() ? "complete" : "incomplete")">
+                <div class="flight-header">
+                    <div class="flight-direction">
+                        <span class="badge bg-success"><i class="oi oi-arrow-left"></i> Return</span>
+                    </div>
+                    <div class="flight-number">@ReturnFlight.Flight.FlightNumber</div>
+                </div>
+                <div class="flight-details">
+                    <div class="flight-time">
+                        <div><strong>Departure:</strong> @ReturnFlight.Flight.DepartureTime.ToString("ddd, MMM d HH:mm")</div>
+                        <div><strong>Arrival:</strong> @ReturnFlight.Flight.ArrivalTime.ToString("ddd, MMM d HH:mm")</div>
+                    </div>
+                    <div class="flight-destination">
+                        <div><strong>Destination:</strong> @ReturnFlight.Flight.Destination</div>
+                        <div><strong>Aircraft:</strong> @ReturnFlight.Flight.AircraftType</div>
+                    </div>
+                </div>
+                @if (!IsCompact)
+                {
+                    <div class="crew-details">
+                        <div class="business-crew">
+                            <h6>Business Class (@ReturnFlight.BusinessStewards.Count/@ReturnFlight.Flight.RequiredBusinessCrew)</h6>
+                            @if (ReturnFlight.BusinessStewards.Any())
+                            {
+                                <ul class="crew-list">
+                                    @foreach (var steward in ReturnFlight.BusinessStewards)
+                                    {
+                                        <li>
+                                            @steward.FullName
+                                            @if (steward.IsSenior)
+                                            {
+                                                <span class="badge bg-danger ms-1">Senior</span>
+                                            }
+                                        </li>
+                                    }
+                                </ul>
+                            }
+                            else
+                            {
+                                <div class="text-danger">Not assigned</div>
+                            }
+                        </div>
+                        <div class="economy-crew">
+                            <h6>Economy Class (@ReturnFlight.EconomyStewards.Count/@ReturnFlight.Flight.RequiredEconomyCrew)</h6>
+                            @if (ReturnFlight.EconomyStewards.Any())
+                            {
+                                <ul class="crew-list">
+                                    @foreach (var steward in ReturnFlight.EconomyStewards)
+                                    {
+                                        <li>@steward.FullName</li>
+                                    }
+                                </ul>
+                            }
+                            else
+                            {
+                                <div class="text-danger">Not assigned</div>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+    else if (OutboundFlight != null)
+    {
+        <div class="flight-card single @(OutboundFlight.IsComplete() ? "complete" : "incomplete")">
+            <div class="flight-header">
+                <div class="flight-direction">
+                    <span class="badge bg-secondary">Single Flight</span>
+                </div>
+                <div class="flight-number">@OutboundFlight.Flight.FlightNumber</div>
+            </div>
+            <div class="flight-details">
+                <div class="flight-time">
+                    <div><strong>Departure:</strong> @OutboundFlight.Flight.DepartureTime.ToString("ddd, MMM d HH:mm")</div>
+                    <div><strong>Arrival:</strong> @OutboundFlight.Flight.ArrivalTime.ToString("ddd, MMM d HH:mm")</div>
+                </div>
+                <div class="flight-destination">
+                    <div><strong>Destination:</strong> @OutboundFlight.Flight.Destination</div>
+                    <div><strong>Aircraft:</strong> @OutboundFlight.Flight.AircraftType</div>
+                </div>
+            </div>
+            @if (!IsCompact)
+            {
+                <div class="crew-details">
+                    <div class="business-crew">
+                        <h6>Business Class (@OutboundFlight.BusinessStewards.Count/@OutboundFlight.Flight.RequiredBusinessCrew)</h6>
+                        @if (OutboundFlight.BusinessStewards.Any())
+                        {
+                            <ul class="crew-list">
+                                @foreach (var steward in OutboundFlight.BusinessStewards)
+                                {
+                                    <li>
+                                        @steward.FullName
+                                        @if (steward.IsSenior)
+                                        {
+                                            <span class="badge bg-danger ms-1">Senior</span>
+                                        }
+                                    </li>
+                                }
+                            </ul>
+                        }
+                        else
+                        {
+                            <div class="text-danger">Not assigned</div>
+                        }
+                    </div>
+                    <div class="economy-crew">
+                        <h6>Economy Class (@OutboundFlight.EconomyStewards.Count/@OutboundFlight.Flight.RequiredEconomyCrew)</h6>
+                        @if (OutboundFlight.EconomyStewards.Any())
+                        {
+                            <ul class="crew-list">
+                                @foreach (var steward in OutboundFlight.EconomyStewards)
+                                {
+                                    <li>@steward.FullName</li>
+                                }
+                            </ul>
+                        }
+                        else
+                        {
+                            <div class="text-danger">Not assigned</div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<style>
+    .flight-pair {
+        margin-bottom: 1.5rem;
+    }
+
+    .flight-pair-container {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+   
+
+    .flight-card {
+        border: 1px solid #dee2e6;
+        border-radius: 0.375rem;
+        padding: 1rem;
+        flex: 1;
+    }
+
+    .flight-card.complete {
+        background-color: #d1e7dd;
+        border-color: #a3cfbb;
+    }
+
+    .flight-card.incomplete {
+        background-color: #fff3cd;
+        border-color: #ffe69c;
+    }
+
+    .flight-card.outbound {
+        border-left: 5px solid #0d6efd;
+    }
+
+    .flight-card.return {
+        border-left: 5px solid #198754;
+    }
+
+    .flight-card.single {
+        border-left: 5px solid #6c757d;
+    }
+
+    .flight-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 0.75rem;
+        border-bottom: 1px solid rgba(0,0,0,0.1);
+        padding-bottom: 0.5rem;
+    }
+
+    .flight-number {
+        font-size: 1.25rem;
+        font-weight: bold;
+    }
+
+    .flight-details {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem;
+        margin-bottom: 1rem;
+    }
+
+    .flight-time, .flight-destination {
+        flex: 1;
+        min-width: 200px;
+    }
+
+    .crew-details {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem;
+    }
+
+    .business-crew, .economy-crew {
+        flex: 1;
+        min-width: 200px;
+    }
+
+    .crew-list {
+        list-style: none;
+        padding-left: 0;
+        margin-bottom: 0;
+        font-size: 0.875rem;
+    }
+
+    .crew-list li {
+        margin-bottom: 0.25rem;
+    }
+
+    .flight-pair-connector {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        padding: 0.5rem;
+        position: relative;
+    }
+
+   
+
+    .connector-line {
+        flex: 1;
+        height: 2px;
+        background-color: #6c757d;
+    }
+
+   
+
+    .connector-icon {
+        background-color: white;
+        border: 2px solid #6c757d;
+        border-radius: 50%;
+        width: 32px;
+        height: 32px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        margin: 0 0.5rem;
+        z-index: 2;
+    }
+
+    
+
+    .connector-details {
+        font-size: 0.75rem;
+        text-align: center;
+        color: #6c757d;
+        margin-top: 0.25rem;
+    }
+
+    /* Compact mode styles */
+    .compact .flight-card {
+        padding: 0.5rem;
+    }
+
+    .compact .flight-header {
+        margin-bottom: 0.25rem;
+        padding-bottom: 0.25rem;
+    }
+
+    .compact .flight-number {
+        font-size: 1rem;
+    }
+
+    .compact .flight-details {
+        font-size: 0.875rem;
+        margin-bottom: 0.5rem;
+    }
+</style>
+
+@code {
+    [Parameter]
+    public FlightAssignment OutboundFlight { get; set; }
+
+    [Parameter]
+    public FlightAssignment ReturnFlight { get; set; }
+
+    [Parameter]
+    public bool IsCompact { get; set; } = false;
+}
