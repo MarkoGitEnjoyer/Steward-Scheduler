@@ -98,7 +98,6 @@ namespace Scheduler.Data.Models
                 entity.Property(e => e.RequiredLanguageId).HasColumnName("required_language_id");
                 entity.Property(e => e.FlightTime).HasColumnName("flight_time");
                 entity.Property(e => e.Priority).HasColumnName("priority");
-                entity.Property(e => e.ReturnFlightId).HasColumnName("return_flight_id");
             });
 
             modelBuilder.Entity<Feedback>(entity =>

@@ -234,28 +234,9 @@ namespace Scheduler.Core.Services
 
         private async Task<List<FlightDto>> GetFlightsForWeekAsync(DateTime weekStart, DateTime weekEnd)
         {
-            // First get all flights departing within the week
-            var flightsInWeek = await _unitOfWork.Flights.FindAsync(f =>
-                f.DepartureTime >= weekStart && f.DepartureTime < weekEnd);
-
-            // Create a set to store all flight IDs we need to include
-            var flightIdsToInclude = new HashSet<int>();
-
-            // Add all flights from the week and their return flights
-            foreach (var flight in flightsInWeek)
-            {
-                flightIdsToInclude.Add(flight.FlightId);
-
-                // If this flight has a return flight, include it too
-                if (flight.ReturnFlightId.HasValue)
-                {
-                    flightIdsToInclude.Add(flight.ReturnFlightId.Value);
-                }
-            }
-
-            // Now fetch all flights by these IDs
+            // Get all flights departing within the week
             var flights = await _unitOfWork.Flights.FindAsync(f =>
-                flightIdsToInclude.Contains(f.FlightId));
+                f.DepartureTime >= weekStart && f.DepartureTime < weekEnd);
 
             var flightDtos = new List<FlightDto>();
 
@@ -291,9 +272,6 @@ namespace Scheduler.Core.Services
 
             return flightDtos;
         }
-
-        // In Scheduler.Core/Services/SchedulingService.cs
-        // Update the GetAllStewardsWithDetailsAsync method to properly load license information
 
         private async Task<List<StewardDto>> GetAllStewardsWithDetailsAsync()
         {
@@ -351,8 +329,7 @@ namespace Scheduler.Core.Services
                 Destination = flight.Destination,
                 RequiredLanguageId = flight.RequiredLanguageId,
                 FlightTime = flight.FlightTime,
-                Priority = flight.Priority,
-                ReturnFlightId = flight.ReturnFlightId
+                Priority = flight.Priority
             };
         }
     }

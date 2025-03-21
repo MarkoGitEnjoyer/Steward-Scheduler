@@ -20,16 +20,12 @@ namespace Scheduler.Data.Models
         public int? RequiredLanguageId { get; set; }
         public float FlightTime { get; set; }
         public int Priority { get; set; }
-        public int? ReturnFlightId { get; set; }
 
         [ForeignKey("AircraftType")]
         public virtual AircraftType Aircraft { get; set; }
 
         [ForeignKey("RequiredLanguageId")]
         public virtual Language RequiredLanguage { get; set; }
-
-        [ForeignKey("ReturnFlightId")]
-        public virtual Flight ReturnFlight { get; set; }
 
         // Navigation properties
         public virtual ICollection<Assignment> Assignments { get; set; }

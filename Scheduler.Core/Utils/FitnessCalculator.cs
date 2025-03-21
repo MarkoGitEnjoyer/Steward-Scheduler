@@ -34,8 +34,6 @@ namespace Scheduler.Core.Utils
             // Calculate steward quality match for flights (based on flight priority and steward quality)
             float qualityMatchRate = CalculateQualityMatchRate(schedule);
 
-            // Calculate flight pair consistency - very important!
-
             // Final fitness is a weighted combination of all factors
             // Give higher weight to flight coverage and completion
             float fitnessScore = 0.35f * flightCoverageRate +       // Coverage of all flights is most important
@@ -45,24 +43,6 @@ namespace Scheduler.Core.Utils
                                0.10f * qualityMatchRate;           // Quality matching
 
             return fitnessScore;
-        }
-
-        // Calculate how well paired flights maintain the same crew
-       
-
-        // Helper to calculate similarity between two lists
-        private static float CalculateListSimilarity<T>(List<T> list1, List<T> list2)
-        {
-            if (list1.Count == 0 && list2.Count == 0)
-                return 1.0f;
-
-            if (list1.Count == 0 || list2.Count == 0)
-                return 0.0f;
-
-            int common = list1.Intersect(list2).Count();
-            int total = Math.Max(list1.Count, list2.Count);
-
-            return (float)common / total;
         }
 
         // Calculate how evenly the work is distributed

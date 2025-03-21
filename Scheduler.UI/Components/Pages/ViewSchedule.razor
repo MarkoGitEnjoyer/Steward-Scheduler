@@ -61,15 +61,15 @@
             <div class="mb-3">
                 <div class="btn-group">
                     <button class="btn @(viewMode == "day" ? "btn-primary" : "btn-outline-primary")"
-                            @onclick="() => viewMode = da">
+                            @onclick="() => viewMode = vday">
                         Day View
                     </button>
                     <button class="btn @(viewMode == "week" ? "btn-primary" : "btn-outline-primary")" 
-                            @onclick="() => viewMode = mont">
+                            @onclick="() => viewMode = vweek">
                         Week View
                     </button>
                     <button class="btn @(viewMode == "list" ? "btn-primary" : "btn-outline-primary")" 
-                            @onclick="() => viewMode = yea">
+                            @onclick="() => viewMode = vlist">
                         List View
                     </button>
                 </div>
@@ -300,6 +300,9 @@
     private WeeklySchedule currentSchedule;
     private string viewMode = "list";
     private string filterText = "";
+    private string vday = "day";
+    private string vweek = "week";
+    private string vlist = "list";
     private string sortField = "departure";
     private string sortDirection = "asc";
     private FlightAssignment selectedFlight;
@@ -309,10 +312,6 @@
     
     private IEnumerable<FlightAssignment> filteredAndSortedAssignments => 
         FilterAndSortAssignments(currentSchedule?.FlightAssignments ?? new List<FlightAssignment>());
-
-    private string da = "day";
-    private string mont = "month";
-    private string yea = "year";
 
     protected override async Task OnInitializedAsync()
     {

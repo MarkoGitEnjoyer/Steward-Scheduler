@@ -17,9 +17,7 @@ namespace Scheduler.Core.Models
         public int? RequiredLanguageId { get; set; }
         public float FlightTime { get; set; }
         public int Priority { get; set; }
-        public int? ReturnFlightId { get; set; }
         public int RequiredBusinessCrew { get; set; }
         public int RequiredEconomyCrew { get; set; }
     }
-
 }
