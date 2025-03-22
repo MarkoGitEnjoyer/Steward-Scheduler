@@ -352,10 +352,38 @@ namespace Scheduler.Core.Algorithms
 
             return child;
         }
+        private bool VerifyHourConstraints(WeeklySchedule schedule, List<StewardDto> allStewards)
+        {
+            // Create a dictionary to track total hours
+            var totalHours = allStewards.ToDictionary(
+                s => s.StewardId,
+                s => s.MonthlyHours
+            );
+
+            // Add hours from the schedule
+            foreach (var assignment in schedule.FlightAssignments)
+            {
+                float flightTime = assignment.Flight.FlightTime;
+
+                foreach (var steward in assignment.BusinessStewards.Concat(assignment.EconomyStewards))
+                {
+                    if (!totalHours.ContainsKey(steward.StewardId))
+                        totalHours[steward.StewardId] = 0;
+
+                    totalHours[steward.StewardId] += flightTime;
+
+                    // If any steward exceeds 90 hours, the schedule is invalid
+                    if (totalHours[steward.StewardId] > 90)
+                        return false;
+                }
+            }
+
+            return true;
+        }
 
         // Mutation operator
         private WeeklySchedule Mutate(WeeklySchedule schedule, List<FlightDto> allFlights,
-                                     List<StewardDto> allStewards, float mutationRate = 0.0f)
+                              List<StewardDto> allStewards, float mutationRate = 0.0f)
         {
             if (schedule.FlightAssignments.Count == 0)
                 return schedule;
@@ -401,9 +429,18 @@ namespace Scheduler.Core.Algorithms
             // Rebuild steward schedules
             RebuildStewardSchedules(schedule);
 
+            // Verify the 90-hour constraint is maintained
+            bool isValid = VerifyHourConstraints(schedule, allStewards);
+
+            // If constraint is violated, revert to original schedule
+            if (!isValid)
+            {
+                Console.WriteLine("Mutation resulted in 90-hour constraint violation. Reverting changes.");
+                return schedule.Clone(); // This will be replaced with the original in the calling method
+            }
+
             return schedule;
         }
-
         // Swap stewards between flights
         private void MutateByStewardSwap(WeeklySchedule schedule)
         {
@@ -725,12 +762,30 @@ namespace Scheduler.Core.Algorithms
         // Helper method to check if a steward can work a flight without conflicts
         private bool CanStewardWorkFlight(StewardDto steward, FlightDto flight, WeeklySchedule schedule)
         {
-            // If steward isn't scheduled yet, they can work any flight (assuming proper licenses)
+            // If steward isn't scheduled yet, check if they have the right license and their total hours won't exceed 90
             if (!schedule.StewardSchedules.ContainsKey(steward.StewardId))
+            {
+                // Check for license
+                if (!steward.HasLicenseForAircraft(flight.AircraftType))
+                    return false;
+
+                // Check that adding this flight's hours won't exceed 90 hours
+                float totalHours = steward.MonthlyHours + flight.FlightTime;
+                if (totalHours > 90)
+                    return false;
+
                 return true;
+            }
 
             // Check if steward has license for this aircraft
             if (!steward.HasLicenseForAircraft(flight.AircraftType))
+                return false;
+
+            // Calculate current flight hours in this schedule
+            float scheduledHours = schedule.StewardSchedules[steward.StewardId].Sum(f => f.FlightTime);
+
+            // Check if adding this flight would exceed 90 hours total
+            if (steward.MonthlyHours + scheduledHours + flight.FlightTime > 90)
                 return false;
 
             // Check for overlap or insufficient rest with ALL existing flights
@@ -751,7 +806,6 @@ namespace Scheduler.Core.Algorithms
 
             return true;
         }
-
         private FlightAssignment CloneFlightAssignment(FlightAssignment assignment)
         {
             var clone = new FlightAssignment

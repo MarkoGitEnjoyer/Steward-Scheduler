@@ -16,7 +16,13 @@ namespace Scheduler.Core.Models
         public bool IsSenior { get; set; }
         public DateTime JoiningDate { get; set; }
         public DateTime? LastFlightEndTime { get; set; }
+
+        // Current hours in the database for this month
         public float MonthlyHours { get; set; }
+
+        // Projected hours including new assignments - for enforcing 90-hour constraint
+        public float ProjectedHours { get; set; }
+
         public List<int> LicenseIds { get; set; } = new List<int>();
         public List<string> LicensedAircraftTypes { get; set; } = new List<string>();
 
@@ -26,6 +32,40 @@ namespace Scheduler.Core.Models
 
         public float ExperienceYears => (float)(DateTime.Now - JoiningDate).TotalDays / 365;
         public float FeedbackScore => PositiveFeedbackCount - NegativeFeedbackCount;
+
+        // Enforce 90-hour constraint
+        public bool WouldExceedHourLimit(float additionalHours)
+        {
+            return (ProjectedHours + additionalHours) > 90;
+        }
+
+        // Helper to initialize and update projected hours
+        public void InitializeProjectedHours()
+        {
+            ProjectedHours = MonthlyHours;
+        }
+
+        // Safely add hours while tracking the limit
+        public bool AddHours(float hours)
+        {
+            if (WouldExceedHourLimit(hours))
+            {
+                return false;
+            }
+
+            ProjectedHours += hours;
+            return true;
+        }
+
+        // Remove hours (for when flights are unassigned)
+        public void RemoveHours(float hours)
+        {
+            ProjectedHours -= hours;
+            // Safety check to prevent negative values
+            if (ProjectedHours < 0)
+                ProjectedHours = 0;
+        }
+
         private bool DoFlightsOverlap(FlightDto flight1, FlightDto flight2)
         {
             return (flight1.DepartureTime <= flight2.ArrivalTime &&
@@ -43,6 +83,7 @@ namespace Scheduler.Core.Models
             TimeSpan restTime = laterFlight.DepartureTime - earlierFlight.ArrivalTime;
             return restTime.TotalHours >= 12;
         }
+
         public bool IsAvailable(DateTime flightDepartureTime, float flightDuration)
         {
             if (LastFlightEndTime == null)
@@ -55,6 +96,12 @@ namespace Scheduler.Core.Models
 
         public bool IsAvailableForFlight(FlightDto flight, WeeklySchedule schedule)
         {
+            // Check 90-hour constraint - HARD LIMIT
+            if (WouldExceedHourLimit(flight.FlightTime))
+            {
+                return false;
+            }
+
             // First check basic availability
             if (!IsAvailable(flight.DepartureTime, flight.FlightTime))
                 return false;
@@ -81,15 +128,16 @@ namespace Scheduler.Core.Models
 
             return true;
         }
+
         // Add this dictionary as a static field to the StewardDto class
         private static readonly Dictionary<string, int> AircraftLicenseMap = new Dictionary<string, int>
-{
-    { "A321", 1 },
-    { "B777", 2 },
-    { "B737", 3 },
-    { "B747", 4 },
-    { "A350", 5 }
-};
+        {
+            { "A321", 1 },
+            { "B777", 2 },
+            { "B737", 3 },
+            { "B747", 4 },
+            { "A350", 5 }
+        };
 
         public bool HasLicenseForAircraft(string aircraftType)
         {
@@ -106,6 +154,7 @@ namespace Scheduler.Core.Models
             // Unknown aircraft type
             return false;
         }
+
         public float GetSuitabilityScore(FlightDto flight, float averageMonthlyHours)
         {
             // Base score starts at 0
@@ -118,7 +167,7 @@ namespace Scheduler.Core.Models
             score += Math.Min(20, Math.Max(0, FeedbackScore * 3));
 
             // Workload balance adds up to 20 points (inverse of current hours)
-            float workloadScore = 20 * (1 - (MonthlyHours / Math.Max(1, averageMonthlyHours * 1.5f)));
+            float workloadScore = 20 * (1 - (ProjectedHours / Math.Max(1, averageMonthlyHours * 1.5f)));
             score += Math.Max(0, workloadScore);
 
             // Language match adds 15 points
@@ -134,6 +183,40 @@ namespace Scheduler.Core.Models
                 score += 10;
 
             return score;
+        }
+
+        // Clone method for deep copying
+        public StewardDto Clone()
+        {
+            var clone = new StewardDto
+            {
+                StewardId = this.StewardId,
+                FirstName = this.FirstName,
+                LastName = this.LastName,
+                Role = this.Role,
+                IsSenior = this.IsSenior,
+                JoiningDate = this.JoiningDate,
+                MonthlyHours = this.MonthlyHours,
+                ProjectedHours = this.ProjectedHours,
+                PositiveFeedbackCount = this.PositiveFeedbackCount,
+                NegativeFeedbackCount = this.NegativeFeedbackCount
+            };
+
+            if (this.LastFlightEndTime.HasValue)
+            {
+                clone.LastFlightEndTime = this.LastFlightEndTime.Value;
+            }
+
+            // Clone collections
+            clone.LicenseIds = new List<int>(this.LicenseIds);
+            clone.LanguageIds = new List<int>(this.LanguageIds);
+
+            if (this.LicensedAircraftTypes != null)
+            {
+                clone.LicensedAircraftTypes = new List<string>(this.LicensedAircraftTypes);
+            }
+
+            return clone;
         }
     }
 }
