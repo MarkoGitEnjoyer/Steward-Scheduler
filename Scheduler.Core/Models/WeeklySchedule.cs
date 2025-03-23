@@ -139,9 +139,31 @@ namespace Scheduler.Core.Models
         {
             foreach (var entry in StewardHours)
             {
-                if (entry.Value > 90)
+                int stewardId = entry.Key;
+                float scheduledHours = entry.Value;
+
+                // Get the steward from any assignment
+                StewardDto steward = null;
+                foreach (var assignment in FlightAssignments)
                 {
-                    return false;
+                    steward = assignment.BusinessStewards
+                        .Concat(assignment.EconomyStewards)
+                        .FirstOrDefault(s => s.StewardId == stewardId);
+
+                    if (steward != null)
+                        break;
+                }
+
+                if (steward != null)
+                {
+                    // Calculate total hours (base + scheduled)
+                    float totalHours = steward.MonthlyHours + scheduledHours;
+
+                    if (totalHours > 90)
+                    {
+                        Console.WriteLine($"Hour constraint violation: Steward {stewardId} has {totalHours} hours");
+                        return false;
+                    }
                 }
             }
             return true;
@@ -189,8 +211,25 @@ namespace Scheduler.Core.Models
 
         public bool WouldExceedStewardHours(int stewardId, float additionalHours)
         {
+            // Get current hours in this schedule
             float currentHours = GetStewardFlightHours(stewardId);
-            return (currentHours + additionalHours) > 90;
+
+            // Get the steward from any assignment to check base hours
+            StewardDto steward = null;
+            foreach (var assignment in FlightAssignments)
+            {
+                steward = assignment.BusinessStewards
+                    .Concat(assignment.EconomyStewards)
+                    .FirstOrDefault(s => s.StewardId == stewardId);
+
+                if (steward != null)
+                    break;
+            }
+
+            // If we couldn't find the steward, assume base hours of 0
+            float baseHours = steward?.MonthlyHours ?? 0;
+
+            return (baseHours + currentHours + additionalHours) > 90;
         }
 
         // Helper method to calculate a steward's current flight hours in this schedule

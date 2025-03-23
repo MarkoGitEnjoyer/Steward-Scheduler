@@ -25,29 +25,43 @@ namespace Scheduler.Core.Algorithms
             DateTime weekStart)
         {
             var population = new List<WeeklySchedule>();
-            var priorityScheduler = new PriorityBasedScheduler();
-
+         
             // Generate weight variations for diversity
             var weightVariations = SchedulingWeights.GenerateVariations(_config.PopulationSize * 2);
 
-            Console.WriteLine($"Generated {weightVariations.Count} different weight configurations");
+            // First, run priority scheduler once to get a good base schedule
+            var priorityScheduler = new PriorityBasedScheduler();
+            var baseSchedule = priorityScheduler.GenerateSchedule(
+                flights.OrderByDescending(f => f.Priority).ToList(),
+                DeepCopyStewards(stewards),
+                weekStart,
+                new SchedulingWeights());
 
-            // Create schedules with different weight configurations
+            // Add this high-quality schedule to our population first
+            population.Add(baseSchedule);
+            Console.WriteLine($"Added base schedule with {baseSchedule.FlightAssignments.Count} flights to population");
+
+            // For each weight variation, create a fresh copy of stewards
             foreach (var weights in weightVariations)
             {
-                // Create a deep copy of stewards for each run to avoid interference
-                var stewardsCopy = DeepCopyStewards(stewards);
+                // IMPORTANT: Create a completely new copy of stewards for each run
+                var freshStewards = DeepCopyStewards(stewards);
 
-                // Generate schedule with this weight configuration
-                var schedule = priorityScheduler.GenerateSchedule(flights, stewardsCopy, weekStart, weights);
+                // Reset projected hours to base monthly hours for each steward
+                foreach (var steward in freshStewards)
+                {
+                    steward.InitializeProjectedHours();
+                    steward.LastFlightEndTime = null; // Reset last flight time too
+                }
 
-                // Try to improve it with local search
-                priorityScheduler.ImproveSchedule(schedule, stewardsCopy);
+                // Now generate schedule with fresh stewards
+                var schedule = priorityScheduler.GenerateSchedule(
+                    flights.OrderByDescending(f => f.Priority).ToList(),
+                    freshStewards,
+                    weekStart,
+                    weights);
 
-                // Calculate initial fitness
-                schedule.FitnessScore = FitnessCalculator.CalculateScheduleFitness(schedule, stewards);
-
-                // Only add if valid and unique enough
+                // Add if unique enough
                 if (!population.Any(p => AreSchedulesSimilar(p, schedule, 0.9f)))
                 {
                     population.Add(schedule);
@@ -60,7 +74,6 @@ namespace Scheduler.Core.Algorithms
 
             Console.WriteLine($"Generated {population.Count} valid and diverse initial schedules");
 
-           
             // Log fitness scores of initial population
             Console.WriteLine("Initial population fitness scores:");
             foreach (var schedule in population.OrderByDescending(s => s.FitnessScore))
@@ -83,6 +96,12 @@ namespace Scheduler.Core.Algorithms
             // Track best solution for reporting
             var bestEver = population.OrderByDescending(s => s.FitnessScore).First().Clone();
             int noImprovementCount = 0;
+
+            // Track best solution with the highest flight count
+            WeeklySchedule bestWithMostFlights = population
+                .OrderByDescending(s => s.FlightAssignments.Count)
+                .ThenByDescending(s => s.FitnessScore)
+                .First().Clone();
 
             Console.WriteLine($"Starting optimization with {_config.MaxGenerations} generations");
 
@@ -109,6 +128,14 @@ namespace Scheduler.Core.Algorithms
                     noImprovementCount++;
                 }
 
+                // Update best solution with most flights if applicable
+                if (currentBest.FlightAssignments.Count > bestWithMostFlights.FlightAssignments.Count ||
+                    (currentBest.FlightAssignments.Count == bestWithMostFlights.FlightAssignments.Count &&
+                     currentBest.FitnessScore > bestWithMostFlights.FitnessScore))
+                {
+                    bestWithMostFlights = currentBest.Clone();
+                }
+
                 // Early termination if no improvement for many generations
                 if (noImprovementCount > 15 && generation > 20)
                 {
@@ -117,7 +144,7 @@ namespace Scheduler.Core.Algorithms
                 }
 
                 // Check if we've reached desired fitness or have no flights (error condition)
-                if (population[0].FitnessScore >= 0.95 || population[0].FlightAssignments.Count == 0)
+                if (population[0].FitnessScore >= 0.98 || population[0].FlightAssignments.Count == 0)
                 {
                     Console.WriteLine($"Reached target fitness or error condition at generation {generation}");
                     break;
@@ -127,8 +154,21 @@ namespace Scheduler.Core.Algorithms
                 var newPopulation = new List<WeeklySchedule>();
 
                 // Elitism: Keep the best schedules
-                int eliteCount = (int)Math.Max(1, Math.Floor(_config.PopulationSize * _config.ElitismRate));
+                int eliteCount = (int)Math.Max(2, Math.Floor(_config.PopulationSize * _config.ElitismRate));
+
+                // Keep the best schedules by fitness
                 newPopulation.AddRange(population.Take(eliteCount).Select(s => s.Clone()));
+
+                // Also explicitly keep the solution with the most flights
+                var mostFlightsSchedule = population
+                    .OrderByDescending(s => s.FlightAssignments.Count)
+                    .ThenByDescending(s => s.FitnessScore)
+                    .First();
+
+                if (!newPopulation.Any(s => s.FlightAssignments.Count == mostFlightsSchedule.FlightAssignments.Count))
+                {
+                    newPopulation.Add(mostFlightsSchedule.Clone());
+                }
 
                 Console.WriteLine($"Generation {generation}: Keeping {eliteCount} elite schedules");
 
@@ -219,21 +259,52 @@ namespace Scheduler.Core.Algorithms
             // Sort by fitness and return the best schedule
             population = population.OrderByDescending(s => s.FitnessScore).ToList();
 
-            // Compare final solution with best ever found
-            if (bestEver.FitnessScore > population[0].FitnessScore)
+            // Get the best schedule based on fitness
+            var bestFitness = population[0];
+
+            // Get the schedule with the most flights
+            var mostFlights = population.OrderByDescending(s => s.FlightAssignments.Count)
+                                      .ThenByDescending(s => s.FitnessScore)
+                                      .First();
+
+            // Compare the various solutions we've tracked
+            Console.WriteLine($"Best by fitness: Fitness={bestFitness.FitnessScore:F4}, Flights={bestFitness.FlightAssignments.Count}");
+            Console.WriteLine($"Best by most flights: Fitness={mostFlights.FitnessScore:F4}, Flights={mostFlights.FlightAssignments.Count}");
+            Console.WriteLine($"Best ever found: Fitness={bestEver.FitnessScore:F4}, Flights={bestEver.FlightAssignments.Count}");
+            Console.WriteLine($"Best with most flights: Fitness={bestWithMostFlights.FitnessScore:F4}, Flights={bestWithMostFlights.FlightAssignments.Count}");
+
+            // Prefer the solution with more flights if the fitness difference is small (within 5%)
+            float fitnessThreshold = 0.95f;
+            if (mostFlights.FlightAssignments.Count > bestFitness.FlightAssignments.Count &&
+                mostFlights.FitnessScore > bestFitness.FitnessScore * fitnessThreshold)
             {
-                Console.WriteLine($"Returning best solution ever found: {bestEver.FitnessScore} vs current best {population[0].FitnessScore}");
+                Console.WriteLine($"Choosing schedule with more flights ({mostFlights.FlightAssignments.Count}) over best fitness");
+                return mostFlights;
+            }
+
+            // If best ever solution has more flights and similar fitness, use that
+            if (bestEver.FlightAssignments.Count > bestFitness.FlightAssignments.Count &&
+                bestEver.FitnessScore > bestFitness.FitnessScore * fitnessThreshold)
+            {
+                Console.WriteLine($"Returning best solution ever found: {bestEver.FitnessScore:F4} ({bestEver.FlightAssignments.Count} flights)");
                 return bestEver;
             }
 
-            Console.WriteLine($"Final best solution: Fitness={population[0].FitnessScore}, Flights={population[0].FlightAssignments.Count}");
+            // If best with most flights has significantly more flights, use that
+            if (bestWithMostFlights.FlightAssignments.Count > bestFitness.FlightAssignments.Count * 1.1 &&
+                bestWithMostFlights.FitnessScore > bestFitness.FitnessScore * fitnessThreshold)
+            {
+                Console.WriteLine($"Returning solution with most flights: {bestWithMostFlights.FitnessScore:F4} ({bestWithMostFlights.FlightAssignments.Count} flights)");
+                return bestWithMostFlights;
+            }
 
-            return population[0];
+            Console.WriteLine($"Final best solution: Fitness={bestFitness.FitnessScore:F4}, Flights={bestFitness.FlightAssignments.Count}");
+            return bestFitness;
         }
 
         #region Genetic Operations
 
-        // Tournament selection
+        // Tournament selection with preference for solutions with more flights
         private WeeklySchedule SelectParent(List<WeeklySchedule> population)
         {
             // Pick tournament candidates (larger tournament size = more selection pressure)
@@ -246,7 +317,21 @@ namespace Scheduler.Core.Algorithms
                 candidates.Add(population[idx]);
             }
 
-            // Return the best
+            // Find the candidate with the most flights
+            var maxFlights = candidates.Max(s => s.FlightAssignments.Count);
+
+            // Get candidates with flight counts close to the max
+            var bestFlightCandidates = candidates
+                .Where(s => s.FlightAssignments.Count >= maxFlights - 1)
+                .ToList();
+
+            // If we have candidates with plenty of flights, prefer those with better fitness
+            if (bestFlightCandidates.Count > 0)
+            {
+                return bestFlightCandidates.OrderByDescending(s => s.FitnessScore).First();
+            }
+
+            // Fall back to standard fitness-based selection
             return candidates.OrderByDescending(s => s.FitnessScore).First();
         }
 
@@ -293,7 +378,7 @@ namespace Scheduler.Core.Algorithms
             return similarity >= similarityThreshold;
         }
 
-        // Crossover operator
+        // Crossover operator with priority preservation
         private WeeklySchedule Crossover(WeeklySchedule parent1, WeeklySchedule parent2)
         {
             var child = new WeeklySchedule
@@ -302,30 +387,62 @@ namespace Scheduler.Core.Algorithms
                 WeekEnd = parent1.WeekEnd
             };
 
-            // Find all flight IDs from both parents
+            // Get flights from both parents
+            var parent1Flights = parent1.FlightAssignments.Select(fa => fa.Flight).ToList();
+            var parent2Flights = parent2.FlightAssignments.Select(fa => fa.Flight).ToList();
+
+            // First, add all high-priority flights from both parents (priority >= 4)
+            var highPriorityFlights = new HashSet<int>();
+
+            // Process parent1 high priority flights first
+            foreach (var assignment in parent1.FlightAssignments.OrderByDescending(fa => fa.Flight.Priority))
+            {
+                if (assignment.Flight.Priority >= 4 && !highPriorityFlights.Contains(assignment.Flight.FlightId))
+                {
+                    child.FlightAssignments.Add(CloneFlightAssignment(assignment));
+                    highPriorityFlights.Add(assignment.Flight.FlightId);
+                }
+            }
+
+            // Then add high priority flights from parent2 that aren't already added
+            foreach (var assignment in parent2.FlightAssignments.OrderByDescending(fa => fa.Flight.Priority))
+            {
+                if (assignment.Flight.Priority >= 4 && !highPriorityFlights.Contains(assignment.Flight.FlightId))
+                {
+                    child.FlightAssignments.Add(CloneFlightAssignment(assignment));
+                    highPriorityFlights.Add(assignment.Flight.FlightId);
+                }
+            }
+
+            // Find all remaining flight IDs from both parents
             var allFlightIds = parent1.FlightAssignments
                 .Select(fa => fa.Flight.FlightId)
                 .Union(parent2.FlightAssignments.Select(fa => fa.Flight.FlightId))
                 .Distinct()
+                .Except(highPriorityFlights) // Exclude already processed high priority flights
                 .ToList();
 
-            // Track processed flights
-            var processedFlights = new HashSet<int>();
-
-            // Handle all flights
+            // Handle all remaining flights
             foreach (var flightId in allFlightIds)
             {
-                if (processedFlights.Contains(flightId))
-                    continue;
-
                 var parent1Assignment = parent1.FlightAssignments
                     .FirstOrDefault(fa => fa.Flight.FlightId == flightId);
 
                 var parent2Assignment = parent2.FlightAssignments
                     .FirstOrDefault(fa => fa.Flight.FlightId == flightId);
 
-                // Randomly choose which parent to inherit from
+                // Randomly choose which parent to inherit from, but bias toward the parent with more flights
                 bool useParent1 = _random.NextDouble() < 0.5;
+
+                // Adjust bias based on which parent has more flights
+                if (parent1.FlightAssignments.Count > parent2.FlightAssignments.Count)
+                {
+                    useParent1 = _random.NextDouble() < 0.7; // 70% chance to use parent1
+                }
+                else if (parent2.FlightAssignments.Count > parent1.FlightAssignments.Count)
+                {
+                    useParent1 = _random.NextDouble() < 0.3; // 30% chance to use parent1
+                }
 
                 if (useParent1 && parent1Assignment != null)
                 {
@@ -343,8 +460,6 @@ namespace Scheduler.Core.Algorithms
                 {
                     child.FlightAssignments.Add(CloneFlightAssignment(parent2Assignment));
                 }
-
-                processedFlights.Add(flightId);
             }
 
             // Rebuild steward schedules
@@ -352,6 +467,7 @@ namespace Scheduler.Core.Algorithms
 
             return child;
         }
+
         private bool VerifyHourConstraints(WeeklySchedule schedule, List<StewardDto> allStewards)
         {
             // Create a dictionary to track total hours
@@ -374,14 +490,16 @@ namespace Scheduler.Core.Algorithms
 
                     // If any steward exceeds 90 hours, the schedule is invalid
                     if (totalHours[steward.StewardId] > 90)
+                    {
                         return false;
+                    }
                 }
             }
 
             return true;
         }
 
-        // Mutation operator
+        // Mutation operator with improved hour constraint checking
         private WeeklySchedule Mutate(WeeklySchedule schedule, List<FlightDto> allFlights,
                               List<StewardDto> allStewards, float mutationRate = 0.0f)
         {
@@ -393,27 +511,27 @@ namespace Scheduler.Core.Algorithms
 
             for (int m = 0; m < mutations; m++)
             {
-                // Choose a mutation type with different probabilities
+                // Modified mutation probabilities to favor operations that increase flights
                 double randomValue = _random.NextDouble();
 
                 try
                 {
-                    if (randomValue < 0.4) // 40% chance
+                    if (randomValue < 0.3) // 30% chance (reduced from 40%)
                     {
                         // Swap two stewards between flights
                         MutateByStewardSwap(schedule);
                     }
-                    else if (randomValue < 0.7) // 30% chance
+                    else if (randomValue < 0.6) // 30% chance (unchanged)
                     {
                         // Replace a steward with another qualified one
                         MutateByReplacement(schedule, allStewards);
                     }
-                    else if (randomValue < 0.9) // 20% chance
+                    else if (randomValue < 0.95) // 35% chance (increased from 20%)
                     {
                         // Add a flight that's not currently in the schedule
                         MutateByAddingFlight(schedule, allFlights, allStewards);
                     }
-                    else // 10% chance
+                    else // 5% chance (reduced from 10%)
                     {
                         // Remove a flight from the schedule (more dramatic change)
                         MutateByRemovingFlight(schedule);
@@ -441,6 +559,7 @@ namespace Scheduler.Core.Algorithms
 
             return schedule;
         }
+
         // Swap stewards between flights
         private void MutateByStewardSwap(WeeklySchedule schedule)
         {
@@ -483,7 +602,14 @@ namespace Scheduler.Core.Algorithms
                         bool canSwap = steward1.HasLicenseForAircraft(flight2.Flight.AircraftType) &&
                                       steward2.HasLicenseForAircraft(flight1.Flight.AircraftType);
 
-                        if (canSwap)
+                        // Check 90-hour limit
+                        float steward1Hours = schedule.GetStewardFlightHours(steward1.StewardId) - flight1.Flight.FlightTime + flight2.Flight.FlightTime;
+                        float steward2Hours = schedule.GetStewardFlightHours(steward2.StewardId) - flight2.Flight.FlightTime + flight1.Flight.FlightTime;
+
+                        bool hourConstraintMet = (steward1.MonthlyHours + steward1Hours <= 90) &&
+                                                (steward2.MonthlyHours + steward2Hours <= 90);
+
+                        if (canSwap && hourConstraintMet)
                         {
                             // Perform swap
                             flight1.BusinessStewards.RemoveAt(steward1Idx);
@@ -512,7 +638,14 @@ namespace Scheduler.Core.Algorithms
                         bool canSwap = steward1.HasLicenseForAircraft(flight2.Flight.AircraftType) &&
                                       steward2.HasLicenseForAircraft(flight1.Flight.AircraftType);
 
-                        if (canSwap)
+                        // Check 90-hour limit
+                        float steward1Hours = schedule.GetStewardFlightHours(steward1.StewardId) - flight1.Flight.FlightTime + flight2.Flight.FlightTime;
+                        float steward2Hours = schedule.GetStewardFlightHours(steward2.StewardId) - flight2.Flight.FlightTime + flight1.Flight.FlightTime;
+
+                        bool hourConstraintMet = (steward1.MonthlyHours + steward1Hours <= 90) &&
+                                                (steward2.MonthlyHours + steward2Hours <= 90);
+
+                        if (canSwap && hourConstraintMet)
                         {
                             // Perform swap
                             flight1.EconomyStewards.RemoveAt(steward1Idx);
@@ -573,10 +706,19 @@ namespace Scheduler.Core.Algorithms
                         candidates = candidates.Where(s => s.IsSenior).ToList();
                     }
 
+                    // Check 90-hour limit for candidates
+                    candidates = candidates.Where(s => {
+                        float candidateHours = schedule.GetStewardFlightHours(s.StewardId) + flightAssignment.Flight.FlightTime;
+                        return (s.MonthlyHours + candidateHours <= 90);
+                    }).ToList();
+
                     if (candidates.Any())
                     {
-                        // Pick a random replacement
-                        var replacement = candidates[_random.Next(candidates.Count)];
+                        // Pick a replacement with preference for stewards with fewer hours
+                        var replacement = candidates
+                            .OrderBy(s => s.MonthlyHours + (schedule.StewardHours.ContainsKey(s.StewardId) ?
+                                schedule.StewardHours[s.StewardId] : 0))
+                            .First();
 
                         // Replace in the flight assignment
                         flightAssignment.BusinessStewards.Remove(stewardToReplace);
@@ -599,10 +741,19 @@ namespace Scheduler.Core.Algorithms
                                !flightAssignment.EconomyStewards.Any(es => es.StewardId == s.StewardId))
                         .ToList();
 
+                    // Check 90-hour limit for candidates
+                    candidates = candidates.Where(s => {
+                        float candidateHours = schedule.GetStewardFlightHours(s.StewardId) + flightAssignment.Flight.FlightTime;
+                        return (s.MonthlyHours + candidateHours <= 90);
+                    }).ToList();
+
                     if (candidates.Any())
                     {
-                        // Pick a random replacement
-                        var replacement = candidates[_random.Next(candidates.Count)];
+                        // Pick a replacement with preference for stewards with fewer hours
+                        var replacement = candidates
+                            .OrderBy(s => s.MonthlyHours + (schedule.StewardHours.ContainsKey(s.StewardId) ?
+                                schedule.StewardHours[s.StewardId] : 0))
+                            .First();
 
                         // Replace in the flight assignment
                         flightAssignment.EconomyStewards.Remove(stewardToReplace);
@@ -614,7 +765,7 @@ namespace Scheduler.Core.Algorithms
             }
         }
 
-        // Add a new flight to the schedule
+        // Add a new flight to the schedule with improved logic
         private void MutateByAddingFlight(WeeklySchedule schedule, List<FlightDto> allFlights, List<StewardDto> allStewards)
         {
             // Get all flights for the current week
@@ -631,12 +782,13 @@ namespace Scheduler.Core.Algorithms
             // Find unscheduled flights
             var unscheduledFlights = weekFlights
                 .Where(f => !scheduledFlightIds.Contains(f.FlightId))
+                .OrderByDescending(f => f.Priority) // Try high priority flights first
                 .ToList();
 
             if (!unscheduledFlights.Any())
                 return;
 
-            // Try to add one of the unscheduled flights
+            // Try to add one of the unscheduled flights, starting with highest priority
             foreach (var flight in unscheduledFlights)
             {
                 var assignment = new FlightAssignment { Flight = flight };
@@ -645,7 +797,8 @@ namespace Scheduler.Core.Algorithms
                 var availableSeniors = allStewards
                     .Where(s => s.Role == "Business" && s.IsSenior &&
                           s.HasLicenseForAircraft(flight.AircraftType) &&
-                          CanStewardWorkFlight(s, flight, schedule))
+                          CanStewardWorkFlight(s, flight, schedule) &&
+                          !WouldExceed90Hours(s, flight, schedule))
                     .ToList();
 
                 if (!availableSeniors.Any())
@@ -661,7 +814,8 @@ namespace Scheduler.Core.Algorithms
                 var availableBusinessStewards = allStewards
                     .Where(s => s.Role == "Business" && !s.IsSenior &&
                           s.HasLicenseForAircraft(flight.AircraftType) &&
-                          CanStewardWorkFlight(s, flight, schedule))
+                          CanStewardWorkFlight(s, flight, schedule) &&
+                          !WouldExceed90Hours(s, flight, schedule))
                     .Take(businessNeeded)
                     .ToList();
 
@@ -675,7 +829,8 @@ namespace Scheduler.Core.Algorithms
                 var availableEconomyStewards = allStewards
                     .Where(s => s.Role == "Economy" &&
                           s.HasLicenseForAircraft(flight.AircraftType) &&
-                          CanStewardWorkFlight(s, flight, schedule))
+                          CanStewardWorkFlight(s, flight, schedule) &&
+                          !WouldExceed90Hours(s, flight, schedule))
                     .Take(flight.RequiredEconomyCrew)
                     .ToList();
 
@@ -695,18 +850,43 @@ namespace Scheduler.Core.Algorithms
             }
         }
 
-        // Remove a flight from the schedule
+        // Check if adding a flight would exceed 90 hours for a steward
+        private bool WouldExceed90Hours(StewardDto steward, FlightDto flight, WeeklySchedule schedule)
+        {
+            float currentHours = steward.MonthlyHours;
+
+            // Add hours from current schedule
+            if (schedule.StewardSchedules.ContainsKey(steward.StewardId))
+            {
+                currentHours += schedule.StewardSchedules[steward.StewardId].Sum(f => f.FlightTime);
+            }
+
+            // Check if adding this flight would exceed 90 hours
+            return (currentHours + flight.FlightTime > 90);
+        }
+
+        // Remove a flight from the schedule - prefer low priority flights
         private void MutateByRemovingFlight(WeeklySchedule schedule)
         {
             if (schedule.FlightAssignments.Count <= 2)
                 return;
 
-            // Pick a random flight
-            int flightIndex = _random.Next(schedule.FlightAssignments.Count);
-            var flightToRemove = schedule.FlightAssignments[flightIndex];
+            // Get flights ordered by priority (ascending) - remove lower priority flights
+            var candidates = schedule.FlightAssignments
+                .OrderBy(fa => fa.Flight.Priority)
+                .Take(3) // Consider the 3 lowest priority flights
+                .ToList();
 
-            // Remove it
-            schedule.FlightAssignments.RemoveAt(flightIndex);
+            // Pick a random flight from the candidates
+            int randomIndex = _random.Next(candidates.Count);
+            var flightToRemove = candidates[randomIndex];
+
+            // Find and remove it
+            int flightIndex = schedule.FlightAssignments.IndexOf(flightToRemove);
+            if (flightIndex >= 0)
+            {
+                schedule.FlightAssignments.RemoveAt(flightIndex);
+            }
         }
 
         #endregion
@@ -806,6 +986,7 @@ namespace Scheduler.Core.Algorithms
 
             return true;
         }
+
         private FlightAssignment CloneFlightAssignment(FlightAssignment assignment)
         {
             var clone = new FlightAssignment
@@ -834,13 +1015,15 @@ namespace Scheduler.Core.Algorithms
                     IsSenior = steward.IsSenior,
                     JoiningDate = steward.JoiningDate,
                     LastFlightEndTime = steward.LastFlightEndTime,
+                    // IMPORTANT: Make sure hours are properly copied
                     MonthlyHours = steward.MonthlyHours,
+                    ProjectedHours = steward.MonthlyHours, // Reset to base hours
                     PositiveFeedbackCount = steward.PositiveFeedbackCount,
                     NegativeFeedbackCount = steward.NegativeFeedbackCount
                 };
 
-                copy.LicenseIds.AddRange(steward.LicenseIds);
-                copy.LanguageIds.AddRange(steward.LanguageIds);
+                copy.LicenseIds = new List<int>(steward.LicenseIds);
+                copy.LanguageIds = new List<int>(steward.LanguageIds);
 
                 if (steward.LicensedAircraftTypes != null)
                 {
@@ -852,22 +1035,30 @@ namespace Scheduler.Core.Algorithms
 
             return copies;
         }
-
         // Rebuild steward schedules after modifications
         private void RebuildStewardSchedules(WeeklySchedule schedule)
         {
             // Clear existing schedules
             schedule.StewardSchedules.Clear();
+            schedule.StewardHours.Clear();
 
             // Rebuild from flight assignments
             foreach (var assignment in schedule.FlightAssignments)
             {
+                float flightTime = assignment.Flight.FlightTime;
+
                 foreach (var steward in assignment.BusinessStewards)
                 {
                     if (!schedule.StewardSchedules.ContainsKey(steward.StewardId))
                         schedule.StewardSchedules[steward.StewardId] = new List<FlightDto>();
 
                     schedule.StewardSchedules[steward.StewardId].Add(assignment.Flight);
+
+                    // Track hours
+                    if (!schedule.StewardHours.ContainsKey(steward.StewardId))
+                        schedule.StewardHours[steward.StewardId] = 0;
+
+                    schedule.StewardHours[steward.StewardId] += flightTime;
                 }
 
                 foreach (var steward in assignment.EconomyStewards)
@@ -876,6 +1067,12 @@ namespace Scheduler.Core.Algorithms
                         schedule.StewardSchedules[steward.StewardId] = new List<FlightDto>();
 
                     schedule.StewardSchedules[steward.StewardId].Add(assignment.Flight);
+
+                    // Track hours
+                    if (!schedule.StewardHours.ContainsKey(steward.StewardId))
+                        schedule.StewardHours[steward.StewardId] = 0;
+
+                    schedule.StewardHours[steward.StewardId] += flightTime;
                 }
             }
 

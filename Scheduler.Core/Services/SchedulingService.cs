@@ -44,10 +44,13 @@ namespace Scheduler.Core.Services
 
             Console.WriteLine($"Generating schedule with {stewards.Count} stewards and {flights.Count} flights.");
 
+            // Sort flights by priority for better initial scheduling
+            var sortedFlights = flights.OrderByDescending(f => f.Priority).ToList();
+
             // Run the priority-based scheduler first
             var priorityScheduler = new PriorityBasedScheduler();
             var initialSchedule = priorityScheduler.GenerateSchedule(
-                flights,
+                sortedFlights,
                 stewards,
                 weekStart,
                 new SchedulingWeights());
@@ -56,12 +59,28 @@ namespace Scheduler.Core.Services
             initialSchedule.InitializeStewardHours(stewards);
             if (!initialSchedule.VerifyHourConstraints())
             {
-             
+                Console.WriteLine("WARNING: Initial schedule violates 90-hour constraint!");
                 RemoveFlightsFromOverworkedStewards(initialSchedule, stewards);
             }
 
+            // Report on initial schedule
+            var initialFlightCount = initialSchedule.FlightAssignments.Count;
+            Console.WriteLine($"Initial schedule has {initialFlightCount} flights scheduled.");
+
+            // Set the total flight count for genetic algorithm to use
+            initialSchedule.TotalFlightCount = totalFlights;
+
             // Run the genetic scheduler to refine the schedule
-            var geneticScheduler = new GeneticScheduler();
+            var geneticConfig = new GeneticAlgorithmConfig
+            {
+                PopulationSize = 20,  // Default is 20
+                MaxGenerations = 100, // Default is 100
+                MutationRate = 0.3f,  // Default is 0.3
+                CrossoverRate = 0.7f, // Default is 0.7
+                ElitismRate = 0.1f    // Default is 0.1
+            };
+
+            var geneticScheduler = new GeneticScheduler(geneticConfig);
             var schedule = geneticScheduler.OptimizeSchedule(flights, stewards, weekStart);
             schedule.TotalFlightCount = totalFlights;
 
@@ -69,8 +88,15 @@ namespace Scheduler.Core.Services
             schedule.InitializeStewardHours(stewards);
             if (!schedule.VerifyHourConstraints())
             {
+                Console.WriteLine("WARNING: Final schedule violates 90-hour constraint! Falling back to initial schedule.");
+                initialSchedule.VerifyHourConstraints(); // Verify initial schedule again
                 return initialSchedule;
             }
+
+            // Report final stats
+            Console.WriteLine($"Initial schedule: {initialFlightCount} flights");
+            Console.WriteLine($"Final schedule: {schedule.FlightAssignments.Count} flights");
+            Console.WriteLine($"Improvement: {schedule.FlightAssignments.Count - initialFlightCount} additional flights scheduled");
 
             return schedule;
         }
@@ -80,7 +106,10 @@ namespace Scheduler.Core.Services
         {
             // Get all stewards who have more than 90 hours
             var overworkedStewardIds = schedule.StewardHours
-                .Where(kv => kv.Value > 90)
+                .Where(kv => {
+                    var steward = stewards.FirstOrDefault(s => s.StewardId == kv.Key);
+                    return steward != null && steward.MonthlyHours + kv.Value > 90;
+                })
                 .Select(kv => kv.Key)
                 .ToList();
 
@@ -89,6 +118,7 @@ namespace Scheduler.Core.Services
                 var steward = stewards.FirstOrDefault(s => s.StewardId == stewardId);
                 if (steward == null) continue;
 
+                Console.WriteLine($"Fixing overworked steward {stewardId}: Base={steward.MonthlyHours}h, Added={schedule.StewardHours[stewardId]}h, Total={steward.MonthlyHours + schedule.StewardHours[stewardId]}h");
 
                 // Get flights assigned to this steward
                 if (!schedule.StewardSchedules.ContainsKey(stewardId)) continue;
@@ -96,11 +126,17 @@ namespace Scheduler.Core.Services
                 var assignments = schedule.StewardSchedules[stewardId].ToList();
 
                 // Sort by priority (ascending)
-                assignments.Sort((a, b) => a.Priority.CompareTo(b.Priority));
+                assignments = assignments.OrderBy(a => a.Priority).ToList();
 
                 // Start removing lowest priority flights until hours are under 90
-                foreach (var flight in assignments)
+                float hoursToRemove = steward.MonthlyHours + schedule.StewardHours[stewardId] - 90;
+                Console.WriteLine($"Need to remove {hoursToRemove} hours from steward {stewardId}");
+
+                while (hoursToRemove > 0 && assignments.Any())
                 {
+                    var flight = assignments.First();
+                    assignments.RemoveAt(0);
+
                     // Find the assignment for this flight
                     var flightAssignment = schedule.FlightAssignments
                         .FirstOrDefault(fa => fa.Flight.FlightId == flight.FlightId);
@@ -110,17 +146,54 @@ namespace Scheduler.Core.Services
                     // Remove the steward from this flight
                     schedule.RemoveStewardFromFlight(steward, flightAssignment);
 
-                    // Check if we've reduced hours enough
-                    if (schedule.StewardHours[stewardId] <= 90)
+                    // Update hours to remove
+                    hoursToRemove -= flight.FlightTime;
+
+                    Console.WriteLine($"Removed steward {stewardId} from flight {flight.FlightId} ({flight.FlightTime}h, Priority {flight.Priority})");
+
+                    // If there aren't enough crew members left, remove the flight entirely
+                    bool hasMinCrew = flightAssignment.BusinessStewards.Any(s => s.IsSenior) &&
+                                     flightAssignment.EconomyStewards.Any();
+
+                    if (!hasMinCrew)
                     {
-                        break;
+                        // Remove this flight completely
+                        schedule.FlightAssignments.Remove(flightAssignment);
+                        Console.WriteLine($"Removed flight {flight.FlightId} due to insufficient crew");
+
+                        // Remove from all stewards' schedules
+                        foreach (var s in stewards)
+                        {
+                            if (schedule.StewardSchedules.ContainsKey(s.StewardId))
+                            {
+                                if (schedule.StewardSchedules[s.StewardId].Contains(flight))
+                                {
+                                    schedule.StewardSchedules[s.StewardId].Remove(flight);
+
+                                    // Update hours too
+                                    if (schedule.StewardHours.ContainsKey(s.StewardId))
+                                    {
+                                        schedule.StewardHours[s.StewardId] -= flight.FlightTime;
+                                    }
+
+                                    s.RemoveHours(flight.FlightTime);
+                                }
+                            }
+                        }
                     }
                 }
+
+                // Recalculate projected hours
+                steward.InitializeProjectedHours();
+                if (schedule.StewardHours.ContainsKey(stewardId))
+                {
+                    steward.AddHours(schedule.StewardHours[stewardId]);
+                }
+
+                Console.WriteLine($"After fixing: Steward {stewardId} now has {steward.ProjectedHours}h total");
             }
         }
 
-        // Save a generated schedule to the database
-        // Save a generated schedule to the database
         // Save a generated schedule to the database
         public async Task<bool> SaveScheduleAsync(WeeklySchedule schedule)
         {
@@ -390,7 +463,7 @@ namespace Scheduler.Core.Services
                 .OrderBy(f => f.DepartureTime)
                 .ToList();
 
-           
+
 
             return flights;
         }

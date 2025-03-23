@@ -36,18 +36,25 @@ namespace Scheduler.Core.Algorithms
             var economyStewards = stewards.Where(s => s.Role == "Economy").ToList();
             var seniorStewards = stewards.Where(s => s.Role == "Business" && s.IsSenior).ToList();
 
-            // Create a composite scoring system for flights
+            // Create a composite scoring system for flights with INCREASED priority weight
             var scoredFlights = flights
                 .Where(f => f.DepartureTime >= weekStart && f.DepartureTime < weekStart.AddDays(7))
                 .Select(f => new {
                     Flight = f,
-                    // Composite score considers priority but also how easy it is to staff
-                    Score = f.Priority * 3 +
+                    // Composite score with stronger emphasis on priority
+                    Score = f.Priority * 5 + // Increased from 3
                            (HasSufficientCrew(f, businessStewards, economyStewards, seniorStewards) ? 2 : 0) -
-                           (f.RequiredBusinessCrew + f.RequiredEconomyCrew)
+                           (f.RequiredBusinessCrew + f.RequiredEconomyCrew) * 0.5f // Reduced impact
                 })
                 .OrderByDescending(sf => sf.Score)
                 .ToList();
+
+            // Print priority order for debugging
+            Console.WriteLine("Flight priority order:");
+            foreach (var sf in scoredFlights.Take(10))
+            {
+                Console.WriteLine($"Flight {sf.Flight.FlightId}: Priority={sf.Flight.Priority}, Score={sf.Score:F2}");
+            }
 
             // Extract flights in new priority order
             var sortedFlights = scoredFlights.Select(sf => sf.Flight).ToList();
@@ -220,18 +227,49 @@ namespace Scheduler.Core.Algorithms
                     schedule.StewardHours[stewardInfo.Steward.StewardId] += totalFlightTime;
                 }
 
-                // If we have at least a senior steward and some economy crew, we can schedule the flight
-                // (we'll consider partial crew better than no flight assigned)
-                bool shouldScheduleFlight = flightAssignment.BusinessStewards.Count > 0 &&
-                                           flightAssignment.BusinessStewards.Any(s => s.IsSenior) &&
-                                           flightAssignment.EconomyStewards.Count > 0;
+                // UPDATED: More lenient staffing requirement for higher priority flights
+                // For lower priority flights (1-2), require full staffing
+                // For medium priority flights (3), allow 80% staffing
+                // For high priority flights (4-5), allow 60% staffing
+                bool shouldScheduleFlight = false;
+
+                // Always require a senior steward and at least one economy steward
+                bool hasMinimumCrew = flightAssignment.BusinessStewards.Any(s => s.IsSenior) &&
+                                     flightAssignment.EconomyStewards.Count > 0;
+
+                if (hasMinimumCrew)
+                {
+                    if (flight.Priority >= 4)
+                    {
+                        // High priority - allow 60% staffing
+                        float businessStaffingRatio = (float)flightAssignment.BusinessStewards.Count / flight.RequiredBusinessCrew;
+                        float economyStaffingRatio = (float)flightAssignment.EconomyStewards.Count / flight.RequiredEconomyCrew;
+                        shouldScheduleFlight = businessStaffingRatio >= 0.6f && economyStaffingRatio >= 0.6f;
+                    }
+                    else if (flight.Priority == 3)
+                    {
+                        // Medium priority - allow 80% staffing
+                        float businessStaffingRatio = (float)flightAssignment.BusinessStewards.Count / flight.RequiredBusinessCrew;
+                        float economyStaffingRatio = (float)flightAssignment.EconomyStewards.Count / flight.RequiredEconomyCrew;
+                        shouldScheduleFlight = businessStaffingRatio >= 0.8f && economyStaffingRatio >= 0.8f;
+                    }
+                    else
+                    {
+                        // Low priority - require full staffing
+                        shouldScheduleFlight = flightAssignment.BusinessStewards.Count >= flight.RequiredBusinessCrew &&
+                                              flightAssignment.EconomyStewards.Count >= flight.RequiredEconomyCrew;
+                    }
+                }
 
                 if (shouldScheduleFlight)
                 {
                     schedule.FlightAssignments.Add(flightAssignment);
+                    Console.WriteLine($"Scheduled flight {flight.FlightId}: Priority {flight.Priority}, Business: {flightAssignment.BusinessStewards.Count}/{flight.RequiredBusinessCrew}, Economy: {flightAssignment.EconomyStewards.Count}/{flight.RequiredEconomyCrew}");
                 }
                 else
                 {
+                    Console.WriteLine($"Could not schedule flight {flight.FlightId}: Priority {flight.Priority}, Business: {flightAssignment.BusinessStewards.Count}/{flight.RequiredBusinessCrew}, Economy: {flightAssignment.EconomyStewards.Count}/{flight.RequiredEconomyCrew}");
+
                     // Remove this flight's hours from the stewards (cleanup)
                     foreach (var steward in flightAssignment.BusinessStewards.Concat(flightAssignment.EconomyStewards))
                     {
@@ -258,7 +296,17 @@ namespace Scheduler.Core.Algorithms
                 .Where(s => s.ProjectedHours > 90)
                 .ToList();
 
-          
+            if (overworkedStewards.Any())
+            {
+                Console.WriteLine($"WARNING: Found {overworkedStewards.Count} stewards with over 90 hours after scheduling!");
+                foreach (var steward in overworkedStewards)
+                {
+                    Console.WriteLine($"  Steward {steward.StewardId}: {steward.ProjectedHours} hours");
+                }
+
+                // Fix by removing lowest priority flights for overworked stewards
+                FixOverworkedStewards(schedule, overworkedStewards);
+            }
 
             // Log the hours for all stewards involved in this schedule
             foreach (var id in schedule.StewardHours.Keys)
@@ -280,6 +328,109 @@ namespace Scheduler.Core.Algorithms
             schedule.FitnessScore = FitnessCalculator.CalculateScheduleFitness(schedule, stewards);
 
             return schedule;
+        }
+
+        // New method to fix overworked stewards by removing them from lowest priority flights
+        private void FixOverworkedStewards(WeeklySchedule schedule, List<StewardDto> overworkedStewards)
+        {
+            foreach (var steward in overworkedStewards)
+            {
+                if (!schedule.StewardSchedules.ContainsKey(steward.StewardId))
+                    continue;
+
+                var stewardFlights = schedule.StewardSchedules[steward.StewardId].ToList();
+
+                // Sort the steward's flights by priority (ascending) to remove lowest priority first
+                stewardFlights = stewardFlights.OrderBy(f => f.Priority).ToList();
+
+                // Keep removing from flights until under 90 hours
+                while (steward.ProjectedHours > 90 && stewardFlights.Any())
+                {
+                    var flightToUnassign = stewardFlights.First();
+                    stewardFlights.RemoveAt(0);
+
+                    // Find the assignment for this flight
+                    var assignment = schedule.FlightAssignments.FirstOrDefault(fa => fa.Flight.FlightId == flightToUnassign.FlightId);
+                    if (assignment == null)
+                        continue;
+
+                    // Remove steward from the flight
+                    if (steward.Role == "Business")
+                    {
+                        // Don't remove if it's the only senior and still needed
+                        if (steward.IsSenior && assignment.BusinessStewards.Count(s => s.IsSenior) <= 1)
+                        {
+                            // Only remove if we can find a replacement senior steward
+                            var replacementSenior = schedule.FlightAssignments
+                                .Where(fa => fa.Flight.Priority < assignment.Flight.Priority)
+                                .SelectMany(fa => fa.BusinessStewards)
+                                .Where(s => s.IsSenior && s.ProjectedHours < 90 - assignment.Flight.FlightTime)
+                                .FirstOrDefault();
+
+                            if (replacementSenior != null)
+                            {
+                                // Remove this senior and add replacement
+                                assignment.BusinessStewards.Remove(steward);
+                                assignment.BusinessStewards.Add(replacementSenior);
+
+                                // Update hours
+                                steward.RemoveHours(flightToUnassign.FlightTime);
+                                replacementSenior.AddHours(flightToUnassign.FlightTime);
+
+                                // Update steward schedules
+                                schedule.StewardSchedules[steward.StewardId].Remove(flightToUnassign);
+
+                                if (!schedule.StewardSchedules.ContainsKey(replacementSenior.StewardId))
+                                    schedule.StewardSchedules[replacementSenior.StewardId] = new List<FlightDto>();
+
+                                schedule.StewardSchedules[replacementSenior.StewardId].Add(flightToUnassign);
+
+                                Console.WriteLine($"Replaced senior steward {steward.StewardId} with {replacementSenior.StewardId} on flight {flightToUnassign.FlightId}");
+                            }
+                            else
+                            {
+                                // Can't find replacement, try next flight
+                                continue;
+                            }
+                        }
+                        else
+                        {
+                            // Not a senior or not the only senior, can safely remove
+                            assignment.BusinessStewards.Remove(steward);
+                            steward.RemoveHours(flightToUnassign.FlightTime);
+                            schedule.StewardSchedules[steward.StewardId].Remove(flightToUnassign);
+
+                            Console.WriteLine($"Removed business steward {steward.StewardId} from flight {flightToUnassign.FlightId}");
+                        }
+                    }
+                    else if (steward.Role == "Economy")
+                    {
+                        // Remove from economy crew
+                        assignment.EconomyStewards.Remove(steward);
+                        steward.RemoveHours(flightToUnassign.FlightTime);
+                        schedule.StewardSchedules[steward.StewardId].Remove(flightToUnassign);
+
+                        Console.WriteLine($"Removed economy steward {steward.StewardId} from flight {flightToUnassign.FlightId}");
+                    }
+
+                    // Update steward hours tracking in schedule
+                    if (schedule.StewardHours.ContainsKey(steward.StewardId))
+                    {
+                        schedule.StewardHours[steward.StewardId] -= flightToUnassign.FlightTime;
+                    }
+
+                    // Check if the flight still has minimum required crew
+                    if (assignment.BusinessStewards.Count == 0 || assignment.EconomyStewards.Count == 0 ||
+                        !assignment.BusinessStewards.Any(s => s.IsSenior))
+                    {
+                        // Remove this flight from the schedule as it can no longer operate
+                        schedule.FlightAssignments.Remove(assignment);
+                        Console.WriteLine($"Removed flight {flightToUnassign.FlightId} from schedule due to insufficient crew");
+                    }
+                }
+
+                Console.WriteLine($"After fix: Steward {steward.StewardId} now has {steward.ProjectedHours} hours");
+            }
         }
 
         // Calculate steward score for flight assignment (simplified version)
@@ -308,11 +459,14 @@ namespace Scheduler.Core.Algorithms
                 languageScore = 1.0f;
             }
 
-            // Calculate weighted score
-            float totalScore = weights.ExperienceWeight * experienceScore +
+            // Flight priority bonus - high-priority flights get better stewards
+            float priorityBonus = flight.Priority / 5.0f; // 0.2 to 1.0
+
+            // Calculate weighted score with priority bonus
+            float totalScore = (weights.ExperienceWeight * experienceScore +
                              weights.FeedbackWeight * feedbackScore +
                              weights.WorkloadBalanceWeight * workloadScore +
-                             weights.LanguageWeight * languageScore;
+                             weights.LanguageWeight * languageScore) * (1 + priorityBonus * 0.5f);
 
             return totalScore;
         }
@@ -402,6 +556,7 @@ namespace Scheduler.Core.Algorithms
 
             return true;
         }
+
         // Modified to use strict 90-hour constraint
         public void ImproveSchedule(WeeklySchedule schedule, List<StewardDto> stewards)
         {
@@ -431,6 +586,8 @@ namespace Scheduler.Core.Algorithms
             if (incompleteAssignments.Count == 0)
                 return;
 
+            Console.WriteLine($"Trying to improve {incompleteAssignments.Count} incomplete flight assignments");
+
             // Find flights with complete crew that have lower priority
             var completeAssignments = schedule.FlightAssignments
                 .Where(fa => fa.IsComplete())
@@ -440,6 +597,8 @@ namespace Scheduler.Core.Algorithms
             // Attempt to improve each incomplete assignment
             foreach (var incomplete in incompleteAssignments)
             {
+                Console.WriteLine($"Improving flight {incomplete.Flight.FlightId} (Priority {incomplete.Flight.Priority})");
+
                 // Check if missing business crew with senior steward
                 if (!incomplete.HasSeniorSteward || incomplete.BusinessStewards.Count < incomplete.Flight.RequiredBusinessCrew)
                 {
@@ -495,13 +654,193 @@ namespace Scheduler.Core.Algorithms
                                 DateTime endTime = incomplete.Flight.ArrivalTime;
                                 senior.LastFlightEndTime = endTime;
 
+                                Console.WriteLine($"Moved senior steward {senior.StewardId} from flight {complete.Flight.FlightId} to {incomplete.Flight.FlightId}");
+
                                 break;
                             }
                         }
                     }
                 }
 
-                // Similar logic for regular business stewards and economy stewards would go here
+                // Check if we still need more business stewards
+                if (incomplete.BusinessStewards.Count < incomplete.Flight.RequiredBusinessCrew)
+                {
+                    // Attempt to move regular business stewards from lower priority flights
+                    int neededBusiness = incomplete.Flight.RequiredBusinessCrew - incomplete.BusinessStewards.Count;
+
+                    foreach (var complete in completeAssignments)
+                    {
+                        // Skip flights with higher or equal priority
+                        if (complete.Flight.Priority >= incomplete.Flight.Priority)
+                            continue;
+
+                        // Don't touch flights that would become understaffed
+                        if (complete.BusinessStewards.Count <= neededBusiness + 1) // +1 to keep at least one
+                            continue;
+
+                        // Look for regular business stewards (non-senior)
+                        var regularStewards = complete.BusinessStewards
+                            .Where(s => !s.IsSenior)
+                            .OrderBy(s => s.ExperienceYears) // Take least experienced first
+                            .Take(neededBusiness)
+                            .ToList();
+
+                        foreach (var steward in regularStewards)
+                        {
+                            // Calculate flight times
+                            float incompleteTime = incomplete.Flight.FlightTime;
+                            float completeTime = complete.Flight.FlightTime;
+
+                            // Check if this steward can work on the incomplete flight
+                            if (IsAvailableForFlight(steward, incomplete.Flight, schedule))
+                            {
+                                // Temporarily remove hours from current flight
+                                steward.RemoveHours(completeTime);
+
+                                // Check if adding new flight would exceed limit
+                                if (steward.WouldExceedHourLimit(incompleteTime))
+                                {
+                                    // Restore original hours and skip this swap
+                                    steward.AddHours(completeTime);
+                                    continue;
+                                }
+
+                                // Add hours for new flight
+                                steward.AddHours(incompleteTime);
+
+                                // Perform the swap
+                                complete.BusinessStewards.Remove(steward);
+                                incomplete.BusinessStewards.Add(steward);
+
+                                // Update steward's schedule
+                                if (schedule.StewardSchedules.ContainsKey(steward.StewardId))
+                                {
+                                    schedule.StewardSchedules[steward.StewardId].Remove(complete.Flight);
+                                    schedule.StewardSchedules[steward.StewardId].Add(incomplete.Flight);
+                                }
+
+                                // Update last flight end time
+                                DateTime endTime = incomplete.Flight.ArrivalTime;
+                                steward.LastFlightEndTime = endTime;
+
+                                Console.WriteLine($"Moved business steward {steward.StewardId} from flight {complete.Flight.FlightId} to {incomplete.Flight.FlightId}");
+
+                                neededBusiness--;
+                                if (neededBusiness == 0)
+                                    break;
+                            }
+                        }
+
+                        if (neededBusiness == 0)
+                            break;
+                    }
+                }
+
+                // Check if we need economy stewards
+                if (incomplete.EconomyStewards.Count < incomplete.Flight.RequiredEconomyCrew)
+                {
+                    // Attempt to move economy stewards from lower priority flights
+                    int neededEconomy = incomplete.Flight.RequiredEconomyCrew - incomplete.EconomyStewards.Count;
+
+                    foreach (var complete in completeAssignments)
+                    {
+                        // Skip flights with higher or equal priority
+                        if (complete.Flight.Priority >= incomplete.Flight.Priority)
+                            continue;
+
+                        // Don't touch flights that would become understaffed
+                        if (complete.EconomyStewards.Count <= neededEconomy + 1) // +1 to keep at least one
+                            continue;
+
+                        // Look for economy stewards
+                        var economyStewards = complete.EconomyStewards
+                            .OrderBy(s => s.ExperienceYears) // Take least experienced first
+                            .Take(neededEconomy)
+                            .ToList();
+
+                        foreach (var steward in economyStewards)
+                        {
+                            // Calculate flight times
+                            float incompleteTime = incomplete.Flight.FlightTime;
+                            float completeTime = complete.Flight.FlightTime;
+
+                            // Check if this steward can work on the incomplete flight
+                            if (IsAvailableForFlight(steward, incomplete.Flight, schedule))
+                            {
+                                // Temporarily remove hours from current flight
+                                steward.RemoveHours(completeTime);
+
+                                // Check if adding new flight would exceed limit
+                                if (steward.WouldExceedHourLimit(incompleteTime))
+                                {
+                                    // Restore original hours and skip this swap
+                                    steward.AddHours(completeTime);
+                                    continue;
+                                }
+
+                                // Add hours for new flight
+                                steward.AddHours(incompleteTime);
+
+                                // Perform the swap
+                                complete.EconomyStewards.Remove(steward);
+                                incomplete.EconomyStewards.Add(steward);
+
+                                // Update steward's schedule
+                                if (schedule.StewardSchedules.ContainsKey(steward.StewardId))
+                                {
+                                    schedule.StewardSchedules[steward.StewardId].Remove(complete.Flight);
+                                    schedule.StewardSchedules[steward.StewardId].Add(incomplete.Flight);
+                                }
+
+                                // Update last flight end time
+                                DateTime endTime = incomplete.Flight.ArrivalTime;
+                                steward.LastFlightEndTime = endTime;
+
+                                Console.WriteLine($"Moved economy steward {steward.StewardId} from flight {complete.Flight.FlightId} to {incomplete.Flight.FlightId}");
+
+                                neededEconomy--;
+                                if (neededEconomy == 0)
+                                    break;
+                            }
+                        }
+
+                        if (neededEconomy == 0)
+                            break;
+                    }
+                }
+            }
+
+            // Check for flights that are now incomplete and should be removed
+            var stillIncomplete = schedule.FlightAssignments
+                .Where(fa => !fa.HasSeniorSteward || fa.EconomyStewards.Count == 0)
+                .OrderBy(fa => fa.Flight.Priority)
+                .ToList();
+
+            foreach (var assignment in stillIncomplete)
+            {
+                Console.WriteLine($"Removing incomplete flight {assignment.Flight.FlightId} (Priority {assignment.Flight.Priority})");
+
+                // Remove all stewards from this flight
+                foreach (var steward in assignment.BusinessStewards.Concat(assignment.EconomyStewards).ToList())
+                {
+                    // Update projected hours
+                    steward.RemoveHours(assignment.Flight.FlightTime);
+
+                    // Update schedule
+                    if (schedule.StewardSchedules.ContainsKey(steward.StewardId))
+                    {
+                        schedule.StewardSchedules[steward.StewardId].Remove(assignment.Flight);
+                    }
+
+                    // Update hours tracking
+                    if (schedule.StewardHours.ContainsKey(steward.StewardId))
+                    {
+                        schedule.StewardHours[steward.StewardId] -= assignment.Flight.FlightTime;
+                    }
+                }
+
+                // Remove from schedule
+                schedule.FlightAssignments.Remove(assignment);
             }
 
             // Recalculate fitness score after improvements

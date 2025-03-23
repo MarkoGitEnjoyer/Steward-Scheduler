@@ -33,10 +33,13 @@ namespace Scheduler.Core.Models
         public float ExperienceYears => (float)(DateTime.Now - JoiningDate).TotalDays / 365;
         public float FeedbackScore => PositiveFeedbackCount - NegativeFeedbackCount;
 
-        // Enforce 90-hour constraint
+        // IMPROVED 90-hour constraint check with safety margin
         public bool WouldExceedHourLimit(float additionalHours)
         {
-            return (ProjectedHours + additionalHours) > 90;
+            const float hourLimit = 90.0f;
+            const float safetyMargin = 0.1f; // Small safety margin to prevent rounding errors
+
+            return (ProjectedHours + additionalHours) > (hourLimit - safetyMargin);
         }
 
         // Helper to initialize and update projected hours
@@ -45,7 +48,7 @@ namespace Scheduler.Core.Models
             ProjectedHours = MonthlyHours;
         }
 
-        // Safely add hours while tracking the limit
+        // Safely add hours while tracking the limit - return success/failure
         public bool AddHours(float hours)
         {
             if (WouldExceedHourLimit(hours))
@@ -62,8 +65,8 @@ namespace Scheduler.Core.Models
         {
             ProjectedHours -= hours;
             // Safety check to prevent negative values
-            if (ProjectedHours < 0)
-                ProjectedHours = 0;
+            if (ProjectedHours < MonthlyHours)
+                ProjectedHours = MonthlyHours;
         }
 
         private bool DoFlightsOverlap(FlightDto flight1, FlightDto flight2)
@@ -181,6 +184,9 @@ namespace Scheduler.Core.Models
             // Being senior adds 10 points for business class
             if (IsSenior && Role == "Business")
                 score += 10;
+
+            // Add bonus points based on flight priority
+            score += flight.Priority * 2;
 
             return score;
         }
