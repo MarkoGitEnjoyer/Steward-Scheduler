@@ -9,10 +9,10 @@ namespace Scheduler.Core.Models
     public class GeneticAlgorithmConfig
     {
         // Increased population size for more diversity
-        public int PopulationSize { get; set; } = 20;
+        public int PopulationSize { get; set; } = 100;
 
         // More generations to allow for evolutionary improvements
-        public int MaxGenerations { get; set; } = 100;
+        public int MaxGenerations { get; set; } = 500;
 
         // Increased mutation rate for more exploration
         public float MutationRate { get; set; } = 0.3f;

@@ -25,7 +25,7 @@ namespace Scheduler.Core.Algorithms
             DateTime weekStart)
         {
             var population = new List<WeeklySchedule>();
-         
+
             // Generate weight variations for diversity
             var weightVariations = SchedulingWeights.GenerateVariations(_config.PopulationSize * 2);
 
@@ -201,7 +201,7 @@ namespace Scheduler.Core.Algorithms
                         child = Crossover(parent1, parent2);
 
                         // Verify the child has valid flights
-                        if (HasOverlappingFlights(child))
+                        if (HasOverlappingFlights(child) || !ValidateScheduleRestTimes(child))
                         {
                             // If invalid, just clone one parent
                             child = _random.NextDouble() < 0.5 ? parent1.Clone() : parent2.Clone();
@@ -220,6 +220,7 @@ namespace Scheduler.Core.Algorithms
 
                         // Only use the mutated child if it's valid
                         if (!HasOverlappingFlights(mutatedChild) &&
+                            ValidateScheduleRestTimes(mutatedChild) &&
                             mutatedChild.FlightAssignments.Count > 0)
                         {
                             child = mutatedChild;
@@ -299,6 +300,14 @@ namespace Scheduler.Core.Algorithms
             }
 
             Console.WriteLine($"Final best solution: Fitness={bestFitness.FitnessScore:F4}, Flights={bestFitness.FlightAssignments.Count}");
+
+            // Final validation to ensure the returned schedule respects rest time constraints
+            if (!ValidateScheduleRestTimes(bestFitness))
+            {
+                Console.WriteLine("WARNING: Final schedule has rest time violations. Applying fix...");
+                FixRestTimeViolations(bestFitness);
+            }
+
             return bestFitness;
         }
 
@@ -465,6 +474,19 @@ namespace Scheduler.Core.Algorithms
             // Rebuild steward schedules
             RebuildStewardSchedules(child);
 
+            // Validate schedule respects rest time constraints
+            if (!ValidateScheduleRestTimes(child))
+            {
+                // Try to fix the schedule
+                FixRestTimeViolations(child);
+
+                // If still invalid, use parent1
+                if (!ValidateScheduleRestTimes(child))
+                {
+                    return parent1.Clone();
+                }
+            }
+
             return child;
         }
 
@@ -557,6 +579,12 @@ namespace Scheduler.Core.Algorithms
                 return schedule.Clone(); // This will be replaced with the original in the calling method
             }
 
+            // Verify rest time constraints
+            if (!ValidateScheduleRestTimes(schedule))
+            {
+                FixRestTimeViolations(schedule);
+            }
+
             return schedule;
         }
 
@@ -602,6 +630,10 @@ namespace Scheduler.Core.Algorithms
                         bool canSwap = steward1.HasLicenseForAircraft(flight2.Flight.AircraftType) &&
                                       steward2.HasLicenseForAircraft(flight1.Flight.AircraftType);
 
+                        // Check rest time constraints for the swap
+                        bool restTimesRespected = WouldRespectRestTime(steward1, flight2.Flight, schedule) &&
+                                                 WouldRespectRestTime(steward2, flight1.Flight, schedule);
+
                         // Check 90-hour limit
                         float steward1Hours = schedule.GetStewardFlightHours(steward1.StewardId) - flight1.Flight.FlightTime + flight2.Flight.FlightTime;
                         float steward2Hours = schedule.GetStewardFlightHours(steward2.StewardId) - flight2.Flight.FlightTime + flight1.Flight.FlightTime;
@@ -609,7 +641,7 @@ namespace Scheduler.Core.Algorithms
                         bool hourConstraintMet = (steward1.MonthlyHours + steward1Hours <= 90) &&
                                                 (steward2.MonthlyHours + steward2Hours <= 90);
 
-                        if (canSwap && hourConstraintMet)
+                        if (canSwap && hourConstraintMet && restTimesRespected)
                         {
                             // Perform swap
                             flight1.BusinessStewards.RemoveAt(steward1Idx);
@@ -638,6 +670,10 @@ namespace Scheduler.Core.Algorithms
                         bool canSwap = steward1.HasLicenseForAircraft(flight2.Flight.AircraftType) &&
                                       steward2.HasLicenseForAircraft(flight1.Flight.AircraftType);
 
+                        // Check rest time constraints for the swap
+                        bool restTimesRespected = WouldRespectRestTime(steward1, flight2.Flight, schedule) &&
+                                                 WouldRespectRestTime(steward2, flight1.Flight, schedule);
+
                         // Check 90-hour limit
                         float steward1Hours = schedule.GetStewardFlightHours(steward1.StewardId) - flight1.Flight.FlightTime + flight2.Flight.FlightTime;
                         float steward2Hours = schedule.GetStewardFlightHours(steward2.StewardId) - flight2.Flight.FlightTime + flight1.Flight.FlightTime;
@@ -645,7 +681,7 @@ namespace Scheduler.Core.Algorithms
                         bool hourConstraintMet = (steward1.MonthlyHours + steward1Hours <= 90) &&
                                                 (steward2.MonthlyHours + steward2Hours <= 90);
 
-                        if (canSwap && hourConstraintMet)
+                        if (canSwap && hourConstraintMet && restTimesRespected)
                         {
                             // Perform swap
                             flight1.EconomyStewards.RemoveAt(steward1Idx);
@@ -697,7 +733,8 @@ namespace Scheduler.Core.Algorithms
                         .Where(s => s.Role == "Business" &&
                                s.StewardId != stewardToReplace.StewardId &&
                                s.HasLicenseForAircraft(flightAssignment.Flight.AircraftType) &&
-                               !flightAssignment.BusinessStewards.Any(bs => bs.StewardId == s.StewardId))
+                               !flightAssignment.BusinessStewards.Any(bs => bs.StewardId == s.StewardId) &&
+                               WouldRespectRestTime(s, flightAssignment.Flight, schedule)) // Check rest times
                         .ToList();
 
                     // If steward being replaced is senior, replacement must also be senior
@@ -738,7 +775,8 @@ namespace Scheduler.Core.Algorithms
                         .Where(s => s.Role == "Economy" &&
                                s.StewardId != stewardToReplace.StewardId &&
                                s.HasLicenseForAircraft(flightAssignment.Flight.AircraftType) &&
-                               !flightAssignment.EconomyStewards.Any(es => es.StewardId == s.StewardId))
+                               !flightAssignment.EconomyStewards.Any(es => es.StewardId == s.StewardId) &&
+                               WouldRespectRestTime(s, flightAssignment.Flight, schedule)) // Check rest times
                         .ToList();
 
                     // Check 90-hour limit for candidates
@@ -798,6 +836,7 @@ namespace Scheduler.Core.Algorithms
                     .Where(s => s.Role == "Business" && s.IsSenior &&
                           s.HasLicenseForAircraft(flight.AircraftType) &&
                           CanStewardWorkFlight(s, flight, schedule) &&
+                          WouldRespectRestTime(s, flight, schedule) && // Check rest times
                           !WouldExceed90Hours(s, flight, schedule))
                     .ToList();
 
@@ -815,6 +854,7 @@ namespace Scheduler.Core.Algorithms
                     .Where(s => s.Role == "Business" && !s.IsSenior &&
                           s.HasLicenseForAircraft(flight.AircraftType) &&
                           CanStewardWorkFlight(s, flight, schedule) &&
+                          WouldRespectRestTime(s, flight, schedule) && // Check rest times
                           !WouldExceed90Hours(s, flight, schedule))
                     .Take(businessNeeded)
                     .ToList();
@@ -830,6 +870,7 @@ namespace Scheduler.Core.Algorithms
                     .Where(s => s.Role == "Economy" &&
                           s.HasLicenseForAircraft(flight.AircraftType) &&
                           CanStewardWorkFlight(s, flight, schedule) &&
+                          WouldRespectRestTime(s, flight, schedule) && // Check rest times
                           !WouldExceed90Hours(s, flight, schedule))
                     .Take(flight.RequiredEconomyCrew)
                     .ToList();
@@ -892,6 +933,198 @@ namespace Scheduler.Core.Algorithms
         #endregion
 
         #region Helper Methods
+
+        // NEW METHOD: Check if a schedule adheres to rest time constraints
+        private bool ValidateScheduleRestTimes(WeeklySchedule schedule)
+        {
+            if (schedule == null || !schedule.StewardSchedules.Any())
+                return true; // Empty schedules are valid
+
+            foreach (var kvp in schedule.StewardSchedules)
+            {
+                int stewardId = kvp.Key;
+                var flights = kvp.Value;
+
+                if (flights.Count <= 1)
+                    continue; // Only one flight, no rest issues
+
+                // Sort flights by departure time
+                var sortedFlights = flights.OrderBy(f => f.DepartureTime).ToList();
+
+                // Check consecutive flight pairs for rest time
+                for (int i = 0; i < sortedFlights.Count - 1; i++)
+                {
+                    var currentFlight = sortedFlights[i];
+                    var nextFlight = sortedFlights[i + 1];
+
+                    // Calculate rest time
+                    TimeSpan restTime = nextFlight.DepartureTime - currentFlight.ArrivalTime;
+
+                    // Check if rest time is less than 12 hours
+                    if (restTime.TotalHours < 12)
+                    {
+                        Console.WriteLine($"Rest time violation: Steward {stewardId} has only {restTime.TotalHours:F1}h " +
+                            $"between flights {currentFlight.FlightId} and {nextFlight.FlightId}");
+                        return false;
+                    }
+                }
+            }
+
+            return true;
+        }
+
+        // NEW METHOD: Check if assigning a flight to a steward would respect rest time constraints
+        private bool WouldRespectRestTime(StewardDto steward, FlightDto flight, WeeklySchedule schedule)
+        {
+            if (!schedule.StewardSchedules.ContainsKey(steward.StewardId))
+                return true; // No existing flights, so no rest time issues
+
+            var existingFlights = schedule.StewardSchedules[steward.StewardId];
+
+            foreach (var existingFlight in existingFlights)
+            {
+                // Skip checking the same flight
+                if (existingFlight.FlightId == flight.FlightId)
+                    continue;
+
+                // Calculate rest time from existing flight to new flight
+                if (existingFlight.ArrivalTime < flight.DepartureTime)
+                {
+                    TimeSpan restTime = flight.DepartureTime - existingFlight.ArrivalTime;
+                    if (restTime.TotalHours < 12)
+                        return false;
+                }
+
+                // Calculate rest time from new flight to existing flight
+                if (flight.ArrivalTime < existingFlight.DepartureTime)
+                {
+                    TimeSpan restTime = existingFlight.DepartureTime - flight.ArrivalTime;
+                    if (restTime.TotalHours < 12)
+                        return false;
+                }
+            }
+
+            return true;
+        }
+
+        // NEW METHOD: Fix rest time violations in a schedule
+        private void FixRestTimeViolations(WeeklySchedule schedule)
+        {
+            // Track problematic flight pairs per steward
+            Dictionary<int, List<Tuple<FlightDto, FlightDto>>> violations = new Dictionary<int, List<Tuple<FlightDto, FlightDto>>>();
+
+            // Find all violations
+            foreach (var kvp in schedule.StewardSchedules)
+            {
+                int stewardId = kvp.Key;
+                var flights = kvp.Value;
+
+                if (flights.Count <= 1)
+                    continue;
+
+                // Sort flights by departure time
+                var sortedFlights = flights.OrderBy(f => f.DepartureTime).ToList();
+
+                // Check consecutive flight pairs
+                for (int i = 0; i < sortedFlights.Count - 1; i++)
+                {
+                    var currentFlight = sortedFlights[i];
+                    var nextFlight = sortedFlights[i + 1];
+
+                    TimeSpan restTime = nextFlight.DepartureTime - currentFlight.ArrivalTime;
+
+                    if (restTime.TotalHours < 12)
+                    {
+                        if (!violations.ContainsKey(stewardId))
+                            violations[stewardId] = new List<Tuple<FlightDto, FlightDto>>();
+
+                        violations[stewardId].Add(new Tuple<FlightDto, FlightDto>(currentFlight, nextFlight));
+                        Console.WriteLine($"Found rest violation: Steward {stewardId} between flights {currentFlight.FlightId} and {nextFlight.FlightId}");
+                    }
+                }
+            }
+
+            // Fix violations by removing stewards from the lower priority flight
+            foreach (var kvp in violations)
+            {
+                int stewardId = kvp.Key;
+                var violationPairs = kvp.Value;
+
+                foreach (var pair in violationPairs)
+                {
+                    // Get the steward object
+                    StewardDto steward = null;
+                    bool found = false;
+
+                    // Determine which flight has lower priority
+                    var flightToRemoveStewardFrom = pair.Item1.Priority <= pair.Item2.Priority ? pair.Item1 : pair.Item2;
+
+                    // Find the corresponding flight assignment
+                    var assignment = schedule.FlightAssignments.FirstOrDefault(fa => fa.Flight.FlightId == flightToRemoveStewardFrom.FlightId);
+
+                    if (assignment == null)
+                        continue;
+
+                    // Find and remove the steward from the assignment
+                    foreach (var s in assignment.BusinessStewards.ToList())
+                    {
+                        if (s.StewardId == stewardId)
+                        {
+                            // Don't remove if it's the only senior steward
+                            if (s.IsSenior && assignment.BusinessStewards.Count(bs => bs.IsSenior) <= 1)
+                                break;
+
+                            assignment.BusinessStewards.Remove(s);
+                            Console.WriteLine($"Removed steward {stewardId} from flight {flightToRemoveStewardFrom.FlightId} to fix rest violation");
+                            found = true;
+                            steward = s;
+                            break;
+                        }
+                    }
+
+                    if (!found)
+                    {
+                        foreach (var s in assignment.EconomyStewards.ToList())
+                        {
+                            if (s.StewardId == stewardId)
+                            {
+                                assignment.EconomyStewards.Remove(s);
+                                Console.WriteLine($"Removed steward {stewardId} from flight {flightToRemoveStewardFrom.FlightId} to fix rest violation");
+                                found = true;
+                                steward = s;
+                                break;
+                            }
+                        }
+                    }
+
+                    // If the steward was found and removed, update the schedule
+                    if (found && steward != null)
+                    {
+                        // Remove this flight from the steward's schedule
+                        if (schedule.StewardSchedules.ContainsKey(stewardId))
+                        {
+                            schedule.StewardSchedules[stewardId].Remove(flightToRemoveStewardFrom);
+                        }
+
+                        // Update hours
+                        if (schedule.StewardHours.ContainsKey(stewardId))
+                        {
+                            schedule.StewardHours[stewardId] -= flightToRemoveStewardFrom.FlightTime;
+                        }
+
+                        // If removing the steward results in an incomplete flight, consider removing the flight entirely
+                        if (!assignment.HasSeniorSteward || assignment.EconomyStewards.Count == 0)
+                        {
+                            schedule.FlightAssignments.Remove(assignment);
+                            Console.WriteLine($"Removed flight {flightToRemoveStewardFrom.FlightId} from schedule due to incomplete crew after rest violation fix");
+                        }
+                    }
+                }
+            }
+
+            // Rebuild steward schedules after fixing
+            RebuildStewardSchedules(schedule);
+        }
 
         // Helper method to check if there are any overlapping flights in the schedule
         private bool HasOverlappingFlights(WeeklySchedule schedule)
@@ -1035,7 +1268,8 @@ namespace Scheduler.Core.Algorithms
 
             return copies;
         }
-        // Rebuild steward schedules after modifications
+
+        // Rebuild steward schedules after modifications - UPDATED with rest time validation
         private void RebuildStewardSchedules(WeeklySchedule schedule)
         {
             // Clear existing schedules
@@ -1076,9 +1310,32 @@ namespace Scheduler.Core.Algorithms
                 }
             }
 
-            // Update LastFlightEndTime for each steward based on their assigned flights
-            var stewardLastFlights = new Dictionary<int, DateTime>();
+            // Sort each steward's flights chronologically and validate rest times
+            foreach (var kvp in schedule.StewardSchedules.ToDictionary(x => x.Key, x => x.Value))
+            {
+                int stewardId = kvp.Key;
+                var flights = kvp.Value;
 
+                // Sort flights by departure time
+                var sortedFlights = flights.OrderBy(f => f.DepartureTime).ToList();
+                schedule.StewardSchedules[stewardId] = sortedFlights;
+
+                // Log rest time violations for debugging (no longer happens as a side effect)
+                for (int i = 0; i < sortedFlights.Count - 1; i++)
+                {
+                    var currentFlight = sortedFlights[i];
+                    var nextFlight = sortedFlights[i + 1];
+
+                    TimeSpan restTime = nextFlight.DepartureTime - currentFlight.ArrivalTime;
+                    if (restTime.TotalHours < 12)
+                    {
+                        Console.WriteLine($"WARNING: Steward {stewardId} has only {restTime.TotalHours:F1}h rest between " +
+                            $"flight {currentFlight.FlightId} and {nextFlight.FlightId}");
+                    }
+                }
+            }
+
+            // Update LastFlightEndTime for each steward based on their assigned flights
             foreach (var kvp in schedule.StewardSchedules)
             {
                 int stewardId = kvp.Key;
