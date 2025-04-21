@@ -18,15 +18,13 @@ namespace Scheduler.Core.Utils
             // Track total flights that should be scheduled this week
             int totalPossibleFlights = schedule.TotalFlightCount > 0 ? schedule.TotalFlightCount : schedule.FlightAssignments.Count;
 
-            // Calculate percentage of flights scheduled - THIS IS CRITICAL
-            float flightCoverageRate = (float)schedule.FlightAssignments.Count / totalPossibleFlights;
+            // --- MODIFICATION START ---
+            // Calculate the number of *fully completed* flight assignments.
+            int fullyAssignedFlights = schedule.FlightAssignments.Count(fa => fa.IsComplete()); // Use the IsComplete method from FlightAssignment
 
-            // Calculate average priority of scheduled flights (0-1 scale)
-            float avgPriority = 0;
-            if (schedule.FlightAssignments.Count > 0)
-            {
-                avgPriority = schedule.FlightAssignments.Average(fa => Math.Min(1.0f, fa.Flight.Priority / 5.0f));
-            }
+            // Calculate coverage rate based on *completed* assignments.
+            float flightCoverageRate = (float)fullyAssignedFlights / totalPossibleFlights;
+            // --- MODIFICATION END ---
 
             // Calculate completion rate of scheduled flights
             float completionRate = schedule.FlightAssignments.Count(fa => fa.IsComplete()) /
@@ -41,17 +39,15 @@ namespace Scheduler.Core.Utils
             // Calculate steward quality match for flights (based on flight priority and steward quality)
             float qualityMatchRate = CalculateQualityMatchRate(schedule);
 
-            // Final fitness is a weighted combination of all factors - WEIGHTS MUST SUM TO 1.0
-            float fitnessScore = 0.50f * flightCoverageRate +       // Coverage of all flights is most important
-                               0.20f * avgPriority +                // Reward scheduling high-priority flights
-                               0.15f * completionRate +             // Completion of scheduled flights
-                               0.05f * workloadBalance +            // Workload balance
-                               0.05f * languageMatchRate +          // Language matching
-                               0.05f * qualityMatchRate;           // Quality matching
+            // Inside FitnessCalculator.CalculateScheduleFitness
+            float fitnessScore = 0.62f * flightCoverageRate +       // Increased weight for coverage
+                                   0.08f * completionRate +             // Reduced weight
+                                   0.1f * workloadBalance +            // Reduced weight
+                                   0.1f * languageMatchRate +          // Reduced weight
+                                   0.1f * qualityMatchRate;           // Reduced weight
 
-            // IMPORTANT: Clamp the final fitness score to ensure it stays in 0-1 range
-            // This was the source of the problem - fitness exceeding 1.0
-            return Math.Min(0.99f, fitnessScore);
+            // Ensure you have removed the clamping as suggested above
+            return fitnessScore;
         }
 
         // Calculate how evenly the work is distributed

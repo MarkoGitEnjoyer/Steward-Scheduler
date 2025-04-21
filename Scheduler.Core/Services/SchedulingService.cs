@@ -71,14 +71,7 @@ namespace Scheduler.Core.Services
             initialSchedule.TotalFlightCount = totalFlights;
 
             // Run the genetic scheduler to refine the schedule
-            var geneticConfig = new GeneticAlgorithmConfig
-            {
-                PopulationSize = 20,  // Default is 20
-                MaxGenerations = 100, // Default is 100
-                MutationRate = 0.3f,  // Default is 0.3
-                CrossoverRate = 0.7f, // Default is 0.7
-                ElitismRate = 0.1f    // Default is 0.1
-            };
+            var geneticConfig = new GeneticAlgorithmConfig();
 
             var geneticScheduler = new GeneticScheduler(geneticConfig);
             var schedule = geneticScheduler.OptimizeSchedule(flights, stewards, weekStart);
@@ -432,7 +425,9 @@ namespace Scheduler.Core.Services
                     }
                 }
 
-                schedule.FlightAssignments.Add(flightAssignment);
+               
+                    schedule.FlightAssignments.Add(flightAssignment);
+                
             }
 
             // Initialize steward hours

@@ -226,7 +226,7 @@ namespace Scheduler.Core.Algorithms
                             child = mutatedChild;
                         }
                     }
-
+                    child.TotalFlightCount = parent1.TotalFlightCount;
                     // Calculate fitness of the new schedule
                     child.FitnessScore = FitnessCalculator.CalculateScheduleFitness(child, stewards);
 
@@ -304,7 +304,6 @@ namespace Scheduler.Core.Algorithms
             // Final validation to ensure the returned schedule respects rest time constraints
             if (!ValidateScheduleRestTimes(bestFitness))
             {
-                Console.WriteLine("WARNING: Final schedule has rest time violations. Applying fix...");
                 FixRestTimeViolations(bestFitness);
             }
 
@@ -400,6 +399,9 @@ namespace Scheduler.Core.Algorithms
             var parent1Flights = parent1.FlightAssignments.Select(fa => fa.Flight).ToList();
             var parent2Flights = parent2.FlightAssignments.Select(fa => fa.Flight).ToList();
 
+            // Steward hour tracking dictionary to enforce 90-hour constraint
+            Dictionary<int, float> stewardHours = new Dictionary<int, float>();
+
             // First, add all high-priority flights from both parents (priority >= 4)
             var highPriorityFlights = new HashSet<int>();
 
@@ -408,8 +410,50 @@ namespace Scheduler.Core.Algorithms
             {
                 if (assignment.Flight.Priority >= 4 && !highPriorityFlights.Contains(assignment.Flight.FlightId))
                 {
-                    child.FlightAssignments.Add(CloneFlightAssignment(assignment));
-                    highPriorityFlights.Add(assignment.Flight.FlightId);
+                    // Check if adding this flight would exceed 90 hours for any steward
+                    bool exceedsLimit = false;
+
+                    // Check business stewards
+                    foreach (var steward in assignment.BusinessStewards)
+                    {
+                        if (!stewardHours.ContainsKey(steward.StewardId))
+                            stewardHours[steward.StewardId] = steward.MonthlyHours;
+
+                        if (stewardHours[steward.StewardId] + assignment.Flight.FlightTime > 90)
+                        {
+                            exceedsLimit = true;
+                            break;
+                        }
+                    }
+
+                    // Check economy stewards
+                    if (!exceedsLimit)
+                    {
+                        foreach (var steward in assignment.EconomyStewards)
+                        {
+                            if (!stewardHours.ContainsKey(steward.StewardId))
+                                stewardHours[steward.StewardId] = steward.MonthlyHours;
+
+                            if (stewardHours[steward.StewardId] + assignment.Flight.FlightTime > 90)
+                            {
+                                exceedsLimit = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    // Only add if it doesn't exceed 90 hours
+                    if (!exceedsLimit)
+                    {
+                        child.FlightAssignments.Add(CloneFlightAssignment(assignment));
+                        highPriorityFlights.Add(assignment.Flight.FlightId);
+
+                        // Update steward hours
+                        foreach (var steward in assignment.BusinessStewards.Concat(assignment.EconomyStewards))
+                        {
+                            stewardHours[steward.StewardId] += assignment.Flight.FlightTime;
+                        }
+                    }
                 }
             }
 
@@ -418,8 +462,50 @@ namespace Scheduler.Core.Algorithms
             {
                 if (assignment.Flight.Priority >= 4 && !highPriorityFlights.Contains(assignment.Flight.FlightId))
                 {
-                    child.FlightAssignments.Add(CloneFlightAssignment(assignment));
-                    highPriorityFlights.Add(assignment.Flight.FlightId);
+                    // Check if adding this flight would exceed 90 hours for any steward
+                    bool exceedsLimit = false;
+
+                    // Check business stewards
+                    foreach (var steward in assignment.BusinessStewards)
+                    {
+                        if (!stewardHours.ContainsKey(steward.StewardId))
+                            stewardHours[steward.StewardId] = steward.MonthlyHours;
+
+                        if (stewardHours[steward.StewardId] + assignment.Flight.FlightTime > 90)
+                        {
+                            exceedsLimit = true;
+                            break;
+                        }
+                    }
+
+                    // Check economy stewards
+                    if (!exceedsLimit)
+                    {
+                        foreach (var steward in assignment.EconomyStewards)
+                        {
+                            if (!stewardHours.ContainsKey(steward.StewardId))
+                                stewardHours[steward.StewardId] = steward.MonthlyHours;
+
+                            if (stewardHours[steward.StewardId] + assignment.Flight.FlightTime > 90)
+                            {
+                                exceedsLimit = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    // Only add if it doesn't exceed 90 hours
+                    if (!exceedsLimit)
+                    {
+                        child.FlightAssignments.Add(CloneFlightAssignment(assignment));
+                        highPriorityFlights.Add(assignment.Flight.FlightId);
+
+                        // Update steward hours
+                        foreach (var steward in assignment.BusinessStewards.Concat(assignment.EconomyStewards))
+                        {
+                            stewardHours[steward.StewardId] += assignment.Flight.FlightTime;
+                        }
+                    }
                 }
             }
 
@@ -453,21 +539,70 @@ namespace Scheduler.Core.Algorithms
                     useParent1 = _random.NextDouble() < 0.3; // 30% chance to use parent1
                 }
 
+                FlightAssignment assignmentToAdd = null;
+
                 if (useParent1 && parent1Assignment != null)
                 {
-                    child.FlightAssignments.Add(CloneFlightAssignment(parent1Assignment));
+                    assignmentToAdd = parent1Assignment;
                 }
                 else if (!useParent1 && parent2Assignment != null)
                 {
-                    child.FlightAssignments.Add(CloneFlightAssignment(parent2Assignment));
+                    assignmentToAdd = parent2Assignment;
                 }
                 else if (parent1Assignment != null)
                 {
-                    child.FlightAssignments.Add(CloneFlightAssignment(parent1Assignment));
+                    assignmentToAdd = parent1Assignment;
                 }
                 else if (parent2Assignment != null)
                 {
-                    child.FlightAssignments.Add(CloneFlightAssignment(parent2Assignment));
+                    assignmentToAdd = parent2Assignment;
+                }
+
+                if (assignmentToAdd != null)
+                {
+                    // Check if adding this flight would exceed 90 hours for any steward
+                    bool exceedsLimit = false;
+
+                    // Check business stewards
+                    foreach (var steward in assignmentToAdd.BusinessStewards)
+                    {
+                        if (!stewardHours.ContainsKey(steward.StewardId))
+                            stewardHours[steward.StewardId] = steward.MonthlyHours;
+
+                        if (stewardHours[steward.StewardId] + assignmentToAdd.Flight.FlightTime > 90)
+                        {
+                            exceedsLimit = true;
+                            break;
+                        }
+                    }
+
+                    // Check economy stewards
+                    if (!exceedsLimit)
+                    {
+                        foreach (var steward in assignmentToAdd.EconomyStewards)
+                        {
+                            if (!stewardHours.ContainsKey(steward.StewardId))
+                                stewardHours[steward.StewardId] = steward.MonthlyHours;
+
+                            if (stewardHours[steward.StewardId] + assignmentToAdd.Flight.FlightTime > 90)
+                            {
+                                exceedsLimit = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    // Only add if it doesn't exceed 90 hours
+                    if (!exceedsLimit)
+                    {
+                        child.FlightAssignments.Add(CloneFlightAssignment(assignmentToAdd));
+
+                        // Update steward hours
+                        foreach (var steward in assignmentToAdd.BusinessStewards.Concat(assignmentToAdd.EconomyStewards))
+                        {
+                            stewardHours[steward.StewardId] += assignmentToAdd.Flight.FlightTime;
+                        }
+                    }
                 }
             }
 
@@ -489,14 +624,19 @@ namespace Scheduler.Core.Algorithms
 
             return child;
         }
-
         private bool VerifyHourConstraints(WeeklySchedule schedule, List<StewardDto> allStewards)
         {
+            // Create a dictionary of stewards for quick lookup
+            var stewardDict = allStewards.ToDictionary(s => s.StewardId, s => s);
+
             // Create a dictionary to track total hours
-            var totalHours = allStewards.ToDictionary(
-                s => s.StewardId,
-                s => s.MonthlyHours
-            );
+            var totalHours = new Dictionary<int, float>();
+
+            // Initialize with monthly hours
+            foreach (var steward in allStewards)
+            {
+                totalHours[steward.StewardId] = steward.MonthlyHours;
+            }
 
             // Add hours from the schedule
             foreach (var assignment in schedule.FlightAssignments)
@@ -506,13 +646,15 @@ namespace Scheduler.Core.Algorithms
                 foreach (var steward in assignment.BusinessStewards.Concat(assignment.EconomyStewards))
                 {
                     if (!totalHours.ContainsKey(steward.StewardId))
-                        totalHours[steward.StewardId] = 0;
+                        totalHours[steward.StewardId] = steward.MonthlyHours;
 
                     totalHours[steward.StewardId] += flightTime;
 
                     // If any steward exceeds 90 hours, the schedule is invalid
                     if (totalHours[steward.StewardId] > 90)
                     {
+                        Console.WriteLine($"Hour constraint violation: Steward {steward.StewardId} would exceed 90 hours " +
+                            $"(Total: {totalHours[steward.StewardId]})");
                         return false;
                     }
                 }
@@ -520,7 +662,6 @@ namespace Scheduler.Core.Algorithms
 
             return true;
         }
-
         // Mutation operator with improved hour constraint checking
         private WeeklySchedule Mutate(WeeklySchedule schedule, List<FlightDto> allFlights,
                               List<StewardDto> allStewards, float mutationRate = 0.0f)
@@ -575,7 +716,6 @@ namespace Scheduler.Core.Algorithms
             // If constraint is violated, revert to original schedule
             if (!isValid)
             {
-                Console.WriteLine("Mutation resulted in 90-hour constraint violation. Reverting changes.");
                 return schedule.Clone(); // This will be replaced with the original in the calling method
             }
 
@@ -826,6 +966,22 @@ namespace Scheduler.Core.Algorithms
             if (!unscheduledFlights.Any())
                 return;
 
+            // Build the current hours dictionary including monthly baseline
+            var currentHours = new Dictionary<int, float>();
+            foreach (var steward in allStewards)
+            {
+                currentHours[steward.StewardId] = steward.MonthlyHours;
+            }
+
+            // Add hours from current schedule
+            foreach (var assignment in schedule.FlightAssignments)
+            {
+                foreach (var steward in assignment.BusinessStewards.Concat(assignment.EconomyStewards))
+                {
+                    currentHours[steward.StewardId] += assignment.Flight.FlightTime;
+                }
+            }
+
             // Try to add one of the unscheduled flights, starting with highest priority
             foreach (var flight in unscheduledFlights)
             {
@@ -837,7 +993,7 @@ namespace Scheduler.Core.Algorithms
                           s.HasLicenseForAircraft(flight.AircraftType) &&
                           CanStewardWorkFlight(s, flight, schedule) &&
                           WouldRespectRestTime(s, flight, schedule) && // Check rest times
-                          !WouldExceed90Hours(s, flight, schedule))
+                          (currentHours[s.StewardId] + flight.FlightTime <= 90)) // Check 90-hour limit
                     .ToList();
 
                 if (!availableSeniors.Any())
@@ -855,7 +1011,7 @@ namespace Scheduler.Core.Algorithms
                           s.HasLicenseForAircraft(flight.AircraftType) &&
                           CanStewardWorkFlight(s, flight, schedule) &&
                           WouldRespectRestTime(s, flight, schedule) && // Check rest times
-                          !WouldExceed90Hours(s, flight, schedule))
+                          (currentHours[s.StewardId] + flight.FlightTime <= 90)) // Check 90-hour limit
                     .Take(businessNeeded)
                     .ToList();
 
@@ -871,7 +1027,7 @@ namespace Scheduler.Core.Algorithms
                           s.HasLicenseForAircraft(flight.AircraftType) &&
                           CanStewardWorkFlight(s, flight, schedule) &&
                           WouldRespectRestTime(s, flight, schedule) && // Check rest times
-                          !WouldExceed90Hours(s, flight, schedule))
+                          (currentHours[s.StewardId] + flight.FlightTime <= 90)) // Check 90-hour limit
                     .Take(flight.RequiredEconomyCrew)
                     .ToList();
 
@@ -886,11 +1042,17 @@ namespace Scheduler.Core.Algorithms
                     assignment.EconomyStewards.Any())
                 {
                     schedule.FlightAssignments.Add(assignment);
+
+                    // Update current hours for next iteration
+                    foreach (var steward in assignment.BusinessStewards.Concat(assignment.EconomyStewards))
+                    {
+                        currentHours[steward.StewardId] += flight.FlightTime;
+                    }
+
                     return;
                 }
             }
         }
-
         // Check if adding a flight would exceed 90 hours for a steward
         private bool WouldExceed90Hours(StewardDto steward, FlightDto flight, WeeklySchedule schedule)
         {
@@ -963,8 +1125,7 @@ namespace Scheduler.Core.Algorithms
                     // Check if rest time is less than 12 hours
                     if (restTime.TotalHours < 12)
                     {
-                        Console.WriteLine($"Rest time violation: Steward {stewardId} has only {restTime.TotalHours:F1}h " +
-                            $"between flights {currentFlight.FlightId} and {nextFlight.FlightId}");
+                 
                         return false;
                     }
                 }
@@ -1039,7 +1200,6 @@ namespace Scheduler.Core.Algorithms
                             violations[stewardId] = new List<Tuple<FlightDto, FlightDto>>();
 
                         violations[stewardId].Add(new Tuple<FlightDto, FlightDto>(currentFlight, nextFlight));
-                        Console.WriteLine($"Found rest violation: Steward {stewardId} between flights {currentFlight.FlightId} and {nextFlight.FlightId}");
                     }
                 }
             }
@@ -1075,7 +1235,6 @@ namespace Scheduler.Core.Algorithms
                                 break;
 
                             assignment.BusinessStewards.Remove(s);
-                            Console.WriteLine($"Removed steward {stewardId} from flight {flightToRemoveStewardFrom.FlightId} to fix rest violation");
                             found = true;
                             steward = s;
                             break;
@@ -1089,7 +1248,6 @@ namespace Scheduler.Core.Algorithms
                             if (s.StewardId == stewardId)
                             {
                                 assignment.EconomyStewards.Remove(s);
-                                Console.WriteLine($"Removed steward {stewardId} from flight {flightToRemoveStewardFrom.FlightId} to fix rest violation");
                                 found = true;
                                 steward = s;
                                 break;
@@ -1116,7 +1274,6 @@ namespace Scheduler.Core.Algorithms
                         if (!assignment.HasSeniorSteward || assignment.EconomyStewards.Count == 0)
                         {
                             schedule.FlightAssignments.Remove(assignment);
-                            Console.WriteLine($"Removed flight {flightToRemoveStewardFrom.FlightId} from schedule due to incomplete crew after rest violation fix");
                         }
                     }
                 }
@@ -1276,6 +1433,9 @@ namespace Scheduler.Core.Algorithms
             schedule.StewardSchedules.Clear();
             schedule.StewardHours.Clear();
 
+            // Dictionary to track hours including monthly baseline for validation
+            Dictionary<int, float> totalHours = new Dictionary<int, float>();
+
             // Rebuild from flight assignments
             foreach (var assignment in schedule.FlightAssignments)
             {
@@ -1293,6 +1453,14 @@ namespace Scheduler.Core.Algorithms
                         schedule.StewardHours[steward.StewardId] = 0;
 
                     schedule.StewardHours[steward.StewardId] += flightTime;
+
+                    // Track total hours including monthly baseline
+                    if (!totalHours.ContainsKey(steward.StewardId))
+                        totalHours[steward.StewardId] = steward.MonthlyHours;
+
+                    totalHours[steward.StewardId] += flightTime;
+
+                   
                 }
 
                 foreach (var steward in assignment.EconomyStewards)
@@ -1307,6 +1475,19 @@ namespace Scheduler.Core.Algorithms
                         schedule.StewardHours[steward.StewardId] = 0;
 
                     schedule.StewardHours[steward.StewardId] += flightTime;
+
+                    // Track total hours including monthly baseline
+                    if (!totalHours.ContainsKey(steward.StewardId))
+                        totalHours[steward.StewardId] = steward.MonthlyHours;
+
+                    totalHours[steward.StewardId] += flightTime;
+
+                    // Log if we're exceeding 90 hours
+                    if (totalHours[steward.StewardId] > 90)
+                    {
+                        Console.WriteLine($"WARNING: Schedule rebuild found steward {steward.StewardId} exceeding 90 hours " +
+                            $"(Total: {totalHours[steward.StewardId]})");
+                    }
                 }
             }
 
@@ -1320,19 +1501,7 @@ namespace Scheduler.Core.Algorithms
                 var sortedFlights = flights.OrderBy(f => f.DepartureTime).ToList();
                 schedule.StewardSchedules[stewardId] = sortedFlights;
 
-                // Log rest time violations for debugging (no longer happens as a side effect)
-                for (int i = 0; i < sortedFlights.Count - 1; i++)
-                {
-                    var currentFlight = sortedFlights[i];
-                    var nextFlight = sortedFlights[i + 1];
-
-                    TimeSpan restTime = nextFlight.DepartureTime - currentFlight.ArrivalTime;
-                    if (restTime.TotalHours < 12)
-                    {
-                        Console.WriteLine($"WARNING: Steward {stewardId} has only {restTime.TotalHours:F1}h rest between " +
-                            $"flight {currentFlight.FlightId} and {nextFlight.FlightId}");
-                    }
-                }
+                
             }
 
             // Update LastFlightEndTime for each steward based on their assigned flights
@@ -1358,7 +1527,6 @@ namespace Scheduler.Core.Algorithms
                 }
             }
         }
-
         #endregion
     }
 }

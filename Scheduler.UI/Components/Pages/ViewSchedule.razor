@@ -294,8 +294,8 @@
 }
 
 @code {
-    private DateTime selectedDate = DateTime.Today;
-    private DateTime selectedDay = DateTime.Today;
+    private DateTime selectedDate = new DateTime(2025, 2, 17);
+    private DateTime selectedDay = new DateTime(2025, 2, 17);
     private bool isLoading = false;
     private WeeklySchedule currentSchedule;
     private string viewMode = "list";
@@ -360,7 +360,7 @@
     
     private void CurrentWeek()
     {
-        selectedDate = DateTime.Today;
+        selectedDate = new DateTime(2025, 2, 17);
         AdjustSelectedDateToMonday();
         selectedDay = selectedDate;
         LoadSchedule();

@@ -176,7 +176,7 @@
     private int activeStewards = 0;
     private int scheduleCompletionPercentage = 0;
     private int scheduleQualityPercentage = 0;
-    private DateTime lastUpdated = DateTime.Now;
+    private DateTime lastUpdated = new DateTime(2025, 2, 17);
     private string currentWeekDisplay = "";
     private WeeklySchedule currentSchedule;
     private List<FlightDto> upcomingFlights = new List<FlightDto>();
@@ -193,7 +193,7 @@
         try
         {
             // Get current week's start date (Monday)
-            var today = DateTime.Today;
+            var today = new DateTime(2025, 2, 17);
             var currentWeekStart = today.AddDays(-(int)today.DayOfWeek + 1);
             if (currentWeekStart.DayOfWeek == DayOfWeek.Sunday) currentWeekStart = currentWeekStart.AddDays(1);
 
@@ -229,9 +229,9 @@
                 scheduleQualityPercentage = (int)Math.Round(currentSchedule.FitnessScore * 100);
 
                 // Get upcoming flights (next 24 hours)
-                var nextDay = DateTime.Now.AddDays(1);
+                var nextDay = new DateTime(2025, 18, 2);
                 upcomingFlights = currentSchedule.FlightAssignments
-                    .Where(fa => fa.Flight.DepartureTime >= DateTime.Now && fa.Flight.DepartureTime <= nextDay)
+                    .Where(fa => fa.Flight.DepartureTime >= new DateTime(2025, 2, 17) && fa.Flight.DepartureTime <= nextDay)
                     .Select(fa => fa.Flight)
                     .OrderBy(f => f.DepartureTime)
                     .ToList();
@@ -247,7 +247,7 @@
                 upcomingFlights = new List<FlightDto>();
             }
 
-            lastUpdated = DateTime.Now;
+            lastUpdated = new DateTime(2025, 2, 17);
         }
         catch (Exception)
         {

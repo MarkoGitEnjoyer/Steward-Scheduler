@@ -287,8 +287,8 @@ else if (!isLoading && selectedStewardId > 0)
 
 @code {
     private int selectedStewardId = 0;
-    private DateTime selectedDate = DateTime.Today;
-    private DateTime weekStart = DateTime.Today;
+    private DateTime selectedDate = new DateTime(2025, 2, 17);
+    private DateTime weekStart = new DateTime(2025, 2, 17);
     private bool isLoading = false;
     private List<Scheduler.Data.Models.Steward> stewards = new List<Scheduler.Data.Models.Steward>();
     private StewardDto selectedSteward;
@@ -320,7 +320,7 @@ else if (!isLoading && selectedStewardId > 0)
 
     private void CurrentWeek()
     {
-        selectedDate = DateTime.Today;
+        selectedDate = new DateTime(2025, 2, 17);
         AdjustSelectedDateToMonday();
     }
 
@@ -355,8 +355,8 @@ else if (!isLoading && selectedStewardId > 0)
                     // Get monthly hours
                         MonthlyHours = await UnitOfWork.Stewards.GetMonthlyHoursAsync(
                             steward.StewardId,
-                            DateTime.Now.Year,
-                            DateTime.Now.Month)
+                            2025,
+                            2)
                     };
 
                 // Get steward's languages
