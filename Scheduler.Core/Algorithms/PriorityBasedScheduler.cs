@@ -71,9 +71,7 @@ namespace Scheduler.Core.Algorithms
                 // Calculate scores for senior stewards with enhanced scoring system
                 var eligibleSeniorStewards = seniorStewards
      .Where(s => s.Role == "Business" &&
-                IsAvailableForFlight(s, flight, schedule) &&
-                !s.WouldExceedHourLimit(totalFlightTime) && // Explicitly check 90-hour limit
-                s.HasLicenseForAircraft(flight.AircraftType))
+                s.IsAvailableForFlight(flight,schedule))
      .Select(s => new
      {
          Steward = s,
@@ -128,9 +126,7 @@ namespace Scheduler.Core.Algorithms
                     var availableBusinessStewards = businessStewards
                         .Where(s => !flightAssignment.BusinessStewards.Any(assignedSteward => assignedSteward.StewardId == s.StewardId) &&
                                   !s.IsSenior && // Exclude senior stewards - already handled
-                                  IsAvailableForFlight(s, flight, schedule) &&
-                                  !s.WouldExceedHourLimit(totalFlightTime) && // STRICT 90-HOUR CHECK
-                                  s.HasLicenseForAircraft(flight.AircraftType))
+                                     s.IsAvailableForFlight(flight, schedule))
                         .Select(s => new
                         {
                             Steward = s,
@@ -176,9 +172,7 @@ namespace Scheduler.Core.Algorithms
                 // Assign economy class stewards with enhanced selection
                 // Only consider stewards who won't exceed 90 hours
                 var availableEconomyStewards = economyStewards
-                    .Where(s => IsAvailableForFlight(s, flight, schedule) &&
-                              !s.WouldExceedHourLimit(totalFlightTime) && // STRICT 90-HOUR CHECK
-                              s.HasLicenseForAircraft(flight.AircraftType))
+                    .Where(s => s.IsAvailableForFlight(flight, schedule))
                     .Select(s => new
                     {
                         Steward = s,
@@ -326,92 +320,6 @@ namespace Scheduler.Core.Algorithms
                              weights.LanguageWeight * languageScore) * (1 + priorityBonus * 0.5f);
 
             return totalScore;
-        }
-
-        // Helper method to check if we have enough stewards (simplified version)
-        private bool HasSufficientCrew(FlightDto flight,
-                    List<StewardDto> businessStewards,
-                    List<StewardDto> economyStewards,
-                    List<StewardDto> seniorStewards)
-        {
-            // Filter stewards to those who have license for this aircraft type
-            // AND who won't exceed 90 hours if assigned this flight
-            var licensedBusinessStewards = businessStewards
-                .Where(s => s.HasLicenseForAircraft(flight.AircraftType) &&
-                        !s.WouldExceedHourLimit(flight.FlightTime)) // Check 90-hour constraint
-                .ToList();
-
-            var licensedEconomyStewards = economyStewards
-                .Where(s => s.HasLicenseForAircraft(flight.AircraftType) &&
-                        !s.WouldExceedHourLimit(flight.FlightTime)) // Check 90-hour constraint
-                .ToList();
-
-            var licensedSeniorStewards = seniorStewards
-                .Where(s => s.HasLicenseForAircraft(flight.AircraftType) &&
-                        !s.WouldExceedHourLimit(flight.FlightTime)) // Check 90-hour constraint
-                .ToList();
-
-            // Check if we have at least the required number of stewards available
-            bool enoughBusiness = licensedBusinessStewards.Count >= flight.RequiredBusinessCrew;
-            bool enoughEconomy = licensedEconomyStewards.Count >= flight.RequiredEconomyCrew;
-            bool hasSeniors = licensedSeniorStewards.Count >= 1;
-
-            return enoughBusiness && enoughEconomy && hasSeniors;
-        }
-
-
-        // Helper to check if two flights overlap in time
-        private bool DoFlightsOverlap(FlightDto flight1, FlightDto flight2)
-        {
-            return (flight1.DepartureTime <= flight2.ArrivalTime &&
-                    flight1.ArrivalTime >= flight2.DepartureTime);
-        }
-
-        private bool HasEnoughRestBetween(FlightDto flight1, FlightDto flight2)
-        {
-            // Determine which flight comes first
-            var earlierFlight = flight1.DepartureTime < flight2.DepartureTime ? flight1 : flight2;
-            var laterFlight = earlierFlight == flight1 ? flight2 : flight1;
-
-            // Check if there's at least 12 hours between the end of the earlier flight
-            // and the start of the later flight
-            TimeSpan restTime = laterFlight.DepartureTime - earlierFlight.ArrivalTime;
-            return restTime.TotalHours >= 12;
-        }
-
-        // Check if steward is available for a flight
-        private bool IsAvailableForFlight(StewardDto steward, FlightDto flight, WeeklySchedule schedule = null)
-        {
-            // First check if adding this flight would exceed 90 hours
-            if (steward.WouldExceedHourLimit(flight.FlightTime))
-            {
-                return false;
-            }
-
-            // Check if steward is available for the flight based on last flight end time
-            if (steward.LastFlightEndTime != null)
-            {
-                TimeSpan restTime = flight.DepartureTime - steward.LastFlightEndTime.Value;
-                if (restTime.TotalHours < 12)
-                    return false;
-            }
-
-            // Check against all currently assigned flights for this steward in the schedule
-            if (schedule != null && schedule.StewardSchedules.TryGetValue(steward.StewardId, out var existingFlights))
-            {
-                foreach (var existingFlight in existingFlights)
-                {
-                    // Check for overlap with the flight
-                    if (DoFlightsOverlap(existingFlight, flight))
-                        return false;
-
-                    // Check if there's enough rest time
-                    if (!HasEnoughRestBetween(existingFlight, flight))
-                        return false;
-                }
-            }
-
-            return true;
         }
 
     }

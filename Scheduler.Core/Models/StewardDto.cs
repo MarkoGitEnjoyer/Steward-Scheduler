@@ -32,6 +32,15 @@ namespace Scheduler.Core.Models
 
         public float ExperienceYears => (float)(DateTime.Now - JoiningDate).TotalDays / 365;
         public float FeedbackScore => PositiveFeedbackCount - NegativeFeedbackCount;
+        // Add this dictionary as a static field to the StewardDto class
+        private static readonly Dictionary<string, int> AircraftLicenseMap = new Dictionary<string, int>
+        {
+            { "A321", 1 },
+            { "B777", 2 },
+            { "B737", 3 },
+            { "B747", 4 },
+            { "A350", 5 }
+        };
 
         // IMPROVED 90-hour constraint check with safety margin
         public bool WouldExceedHourLimit(float additionalHours)
@@ -69,13 +78,13 @@ namespace Scheduler.Core.Models
                 ProjectedHours = MonthlyHours;
         }
 
-        private bool DoFlightsOverlap(FlightDto flight1, FlightDto flight2)
+        public static bool DoFlightsOverlap(FlightDto flight1, FlightDto flight2)
         {
             return (flight1.DepartureTime <= flight2.ArrivalTime &&
                     flight1.ArrivalTime >= flight2.DepartureTime);
         }
 
-        private bool HasEnoughRestBetween(FlightDto flight1, FlightDto flight2)
+        public static bool HasEnoughRestBetween(FlightDto flight1, FlightDto flight2)
         {
             // Determine which flight comes first
             var earlierFlight = flight1.DepartureTime < flight2.DepartureTime ? flight1 : flight2;
@@ -132,16 +141,6 @@ namespace Scheduler.Core.Models
             return true;
         }
 
-        // Add this dictionary as a static field to the StewardDto class
-        private static readonly Dictionary<string, int> AircraftLicenseMap = new Dictionary<string, int>
-        {
-            { "A321", 1 },
-            { "B777", 2 },
-            { "B737", 3 },
-            { "B747", 4 },
-            { "A350", 5 }
-        };
-
         public bool HasLicenseForAircraft(string aircraftType)
         {
             if (string.IsNullOrEmpty(aircraftType) || LicenseIds == null || !LicenseIds.Any())
@@ -156,39 +155,6 @@ namespace Scheduler.Core.Models
 
             // Unknown aircraft type
             return false;
-        }
-
-        public float GetSuitabilityScore(FlightDto flight, float averageMonthlyHours)
-        {
-            // Base score starts at 0
-            float score = 0;
-
-            // Experience adds up to 25 points
-            score += Math.Min(25, ExperienceYears * 5);
-
-            // Feedback adds up to 20 points
-            score += Math.Min(20, Math.Max(0, FeedbackScore * 3));
-
-            // Workload balance adds up to 20 points (inverse of current hours)
-            float workloadScore = 20 * (1 - (ProjectedHours / Math.Max(1, averageMonthlyHours * 1.5f)));
-            score += Math.Max(0, workloadScore);
-
-            // Language match adds 15 points
-            if (flight.RequiredLanguageId.HasValue &&
-                flight.RequiredLanguageId.Value > 0 &&
-                LanguageIds.Contains(flight.RequiredLanguageId.Value))
-            {
-                score += 15;
-            }
-
-            // Being senior adds 10 points for business class
-            if (IsSenior && Role == "Business")
-                score += 10;
-
-            // Add bonus points based on flight priority
-            score += flight.Priority * 2;
-
-            return score;
         }
 
         // Clone method for deep copying

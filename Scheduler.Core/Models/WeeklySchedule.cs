@@ -53,49 +53,6 @@ namespace Scheduler.Core.Models
             }
         }
 
-        // Add a steward to a flight if it doesn't violate the 90-hour constraint
-        public bool TryAddStewardToFlight(StewardDto steward, FlightAssignment assignment)
-        {
-            // Check if adding this flight would exceed the steward's 90-hour limit
-            if (steward.WouldExceedHourLimit(assignment.Flight.FlightTime))
-            {
-                return false;
-            }
-
-            // Check role-specific requirements
-            if (steward.Role == "Business")
-            {
-                assignment.BusinessStewards.Add(steward);
-            }
-            else if (steward.Role == "Economy")
-            {
-                assignment.EconomyStewards.Add(steward);
-            }
-            else
-            {
-                return false; // Unknown role
-            }
-
-            // Update the steward's hours
-            steward.AddHours(assignment.Flight.FlightTime);
-
-            // Update tracking dictionary
-            if (!StewardHours.ContainsKey(steward.StewardId))
-            {
-                StewardHours[steward.StewardId] = 0;
-            }
-            StewardHours[steward.StewardId] += assignment.Flight.FlightTime;
-
-            // Update steward's schedule
-            if (!StewardSchedules.ContainsKey(steward.StewardId))
-            {
-                StewardSchedules[steward.StewardId] = new List<FlightDto>();
-            }
-            StewardSchedules[steward.StewardId].Add(assignment.Flight);
-
-            return true;
-        }
-
         // Remove a steward from a flight and update hours
         public void RemoveStewardFromFlight(StewardDto steward, FlightAssignment assignment)
         {
@@ -209,29 +166,6 @@ namespace Scheduler.Core.Models
             return clone;
         }
 
-        public bool WouldExceedStewardHours(int stewardId, float additionalHours)
-        {
-            // Get current hours in this schedule
-            float currentHours = GetStewardFlightHours(stewardId);
-
-            // Get the steward from any assignment to check base hours
-            StewardDto steward = null;
-            foreach (var assignment in FlightAssignments)
-            {
-                steward = assignment.BusinessStewards
-                    .Concat(assignment.EconomyStewards)
-                    .FirstOrDefault(s => s.StewardId == stewardId);
-
-                if (steward != null)
-                    break;
-            }
-
-            // If we couldn't find the steward, assume base hours of 0
-            float baseHours = steward?.MonthlyHours ?? 0;
-
-            return (baseHours + currentHours + additionalHours) > 90;
-        }
-
         // Helper method to calculate a steward's current flight hours in this schedule
         public float GetStewardFlightHours(int stewardId)
         {
@@ -249,68 +183,6 @@ namespace Scheduler.Core.Models
             return hours;
         }
 
-        // Helper method to check if a steward is already overworked
-        public bool IsStewardOverworked(StewardDto steward)
-        {
-            if (steward.WouldExceedHourLimit(0))
-            {
-                return true;
-            }
-
-            return false;
-        }
-
-        // Helper method to check if adding a flight would create a conflict for a steward
-        public bool WouldCreateTimeConflict(StewardDto steward, FlightDto flight)
-        {
-            // If steward isn't scheduled yet, no conflict
-            if (!StewardSchedules.ContainsKey(steward.StewardId))
-                return false;
-
-            // Check for overlap with existing flights
-            foreach (var existingFlight in StewardSchedules[steward.StewardId])
-            {
-                // Check if flights overlap or don't leave enough rest time (12 hours)
-                if (DoFlightsOverlap(existingFlight, flight) ||
-                    !HasEnoughRestBetween(existingFlight, flight))
-                    return true;
-            }
-
-            return false;
-        }
-
-        // Helper to check if two flights overlap in time
-        private bool DoFlightsOverlap(FlightDto flight1, FlightDto flight2)
-        {
-            return (flight1.DepartureTime <= flight2.ArrivalTime &&
-                    flight1.ArrivalTime >= flight2.DepartureTime);
-        }
-
-        // Helper to check if there's enough rest time between flights
-        private bool HasEnoughRestBetween(FlightDto flight1, FlightDto flight2)
-        {
-            // Determine which flight comes first
-            var earlierFlight = flight1.DepartureTime < flight2.DepartureTime ? flight1 : flight2;
-            var laterFlight = earlierFlight == flight1 ? flight2 : flight1;
-
-            // Check if there's at least 12 hours between the end of the earlier flight
-            // and the start of the later flight
-            TimeSpan restTime = laterFlight.DepartureTime - earlierFlight.ArrivalTime;
-            return restTime.TotalHours >= 12;
-        }
-
-        public List<FlightDto> GetUnassignedFlights()
-        {
-            var assignedFlightIds = FlightAssignments.Select(fa => fa.Flight.FlightId).ToHashSet();
-
-            // Get all flights from the week that are assigned
-            var allWeekFlights = FlightAssignments.Select(fa => fa.Flight)
-                .Where(f => f.DepartureTime >= WeekStart && f.DepartureTime < WeekEnd)
-                .ToList();
-
-            // Find any flights missing from assignments (this would require having a complete list of all flights)
-            // Since we don't have that here, this is a placeholder that would need to be replaced with actual logic
-            return new List<FlightDto>();
-        }
+        
     }
 }

@@ -1053,21 +1053,7 @@ namespace Scheduler.Core.Algorithms
                 }
             }
         }
-        // Check if adding a flight would exceed 90 hours for a steward
-        private bool WouldExceed90Hours(StewardDto steward, FlightDto flight, WeeklySchedule schedule)
-        {
-            float currentHours = steward.MonthlyHours;
-
-            // Add hours from current schedule
-            if (schedule.StewardSchedules.ContainsKey(steward.StewardId))
-            {
-                currentHours += schedule.StewardSchedules[steward.StewardId].Sum(f => f.FlightTime);
-            }
-
-            // Check if adding this flight would exceed 90 hours
-            return (currentHours + flight.FlightTime > 90);
-        }
-
+       
         // Remove a flight from the schedule - prefer low priority flights
         private void MutateByRemovingFlight(WeeklySchedule schedule)
         {
@@ -1299,7 +1285,7 @@ namespace Scheduler.Core.Algorithms
                 {
                     for (int j = i + 1; j < orderedFlights.Count; j++)
                     {
-                        if (DoFlightsOverlap(orderedFlights[i], orderedFlights[j]))
+                        if (StewardDto.DoFlightsOverlap(orderedFlights[i], orderedFlights[j]))
                         {
                             return true;
                         }
@@ -1309,25 +1295,6 @@ namespace Scheduler.Core.Algorithms
             return false;
         }
 
-        // Helper to check if two flights overlap in time
-        private bool DoFlightsOverlap(FlightDto flight1, FlightDto flight2)
-        {
-            return (flight1.DepartureTime <= flight2.ArrivalTime &&
-                    flight1.ArrivalTime >= flight2.DepartureTime);
-        }
-
-        // Helper to check if there's enough rest time between flights
-        private bool HasEnoughRestBetween(FlightDto flight1, FlightDto flight2)
-        {
-            // Determine which flight comes first
-            var earlierFlight = flight1.DepartureTime < flight2.DepartureTime ? flight1 : flight2;
-            var laterFlight = earlierFlight == flight1 ? flight2 : flight1;
-
-            // Check if there's at least 12 hours between the end of the earlier flight
-            // and the start of the later flight
-            TimeSpan restTime = laterFlight.DepartureTime - earlierFlight.ArrivalTime;
-            return restTime.TotalHours >= 12;
-        }
 
         // Helper method to check if a steward can work a flight without conflicts
         private bool CanStewardWorkFlight(StewardDto steward, FlightDto flight, WeeklySchedule schedule)
@@ -1366,11 +1333,11 @@ namespace Scheduler.Core.Algorithms
                     continue;
 
                 // Check if flights overlap in time
-                if (DoFlightsOverlap(existingFlight, flight))
+                if (StewardDto.DoFlightsOverlap(existingFlight, flight))
                     return false;
 
                 // Check if there's enough rest time between flights
-                if (!HasEnoughRestBetween(existingFlight, flight))
+                if (!StewardDto.HasEnoughRestBetween(existingFlight, flight))
                     return false;
             }
 
