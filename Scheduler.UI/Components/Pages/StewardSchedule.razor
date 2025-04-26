@@ -18,13 +18,25 @@
             <div class="card-body">
                 <div class="mb-3">
                     <label for="stewardSelect" class="form-label">Select Steward:</label>
-                    <select class="form-select" id="stewardSelect" @bind="selectedStewardId">
-                        <option value="0">-- Select a Steward --</option>
-                        @foreach (var steward in stewards)
-                        {
-                            <option value="@steward.StewardId">@steward.FirstName @steward.LastName (@steward.Role)</option>
-                        }
-                    </select>
+                    <div class="input-group">
+                        <button class="btn btn-outline-secondary"
+                                @onclick="PreviousSteward"
+                                disabled="@(stewards.Count == 0 || isLoading)">
+                            <i class="oi oi-chevron-left"></i>
+                        </button>
+                        <select class="form-select" id="stewardSelect" @bind="selectedStewardId">
+                            <option value="0">-- Select a Steward --</option>
+                            @foreach (var steward in stewards)
+                            {
+                                <option value="@steward.StewardId">@steward.FirstName @steward.LastName (@steward.Role)</option>
+                            }
+                        </select>
+                        <button class="btn btn-outline-secondary"
+                                @onclick="NextSteward"
+                                disabled="@(stewards.Count == 0 || isLoading)">
+                            <i class="oi oi-chevron-right"></i>
+                        </button>
+                    </div>
                 </div>
 
                 <div class="mb-3">
@@ -324,6 +336,40 @@ else if (!isLoading && selectedStewardId > 0)
         AdjustSelectedDateToMonday();
     }
 
+    private async Task NextSteward()
+    {
+        if (stewards.Count == 0 || isLoading)
+            return;
+
+        // Find the current index
+        int currentIndex = stewards.FindIndex(s => s.StewardId == selectedStewardId);
+
+        // If not found or at the end, go to the first steward
+        if (currentIndex == -1 || currentIndex == stewards.Count - 1)
+            selectedStewardId = stewards.First().StewardId;
+        else
+            selectedStewardId = stewards[currentIndex + 1].StewardId;
+
+        await LoadStewardSchedule();
+    }
+
+    private async Task PreviousSteward()
+    {
+        if (stewards.Count == 0 || isLoading)
+            return;
+
+        // Find the current index
+        int currentIndex = stewards.FindIndex(s => s.StewardId == selectedStewardId);
+
+        // If not found or at the beginning, go to the last steward
+        if (currentIndex <= 0)
+            selectedStewardId = stewards.Last().StewardId;
+        else
+            selectedStewardId = stewards[currentIndex - 1].StewardId;
+
+        await LoadStewardSchedule();
+    }
+
     private async Task LoadStewardSchedule()
     {
         if (selectedStewardId <= 0)
@@ -354,9 +400,9 @@ else if (!isLoading && selectedStewardId > 0)
 
                     // Get monthly hours
                         MonthlyHours = await UnitOfWork.Stewards.GetMonthlyHoursAsync(
-                            steward.StewardId,
-                            2025,
-                            2)
+                                steward.StewardId,
+                                2025,
+                                2)
                     };
 
                 // Get steward's languages
