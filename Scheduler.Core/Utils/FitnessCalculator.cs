@@ -46,7 +46,6 @@ namespace Scheduler.Core.Utils
                                    0.1f * languageMatchRate +          // Reduced weight
                                    0.1f * qualityMatchRate;           // Reduced weight
 
-            // Ensure you have removed the clamping as suggested above
             return fitnessScore;
         }
 
@@ -57,28 +56,31 @@ namespace Scheduler.Core.Utils
                 return 0;
 
             // Calculate hours per steward
-            Dictionary<int, float> stewardHours = new Dictionary<int, float>();
+            Dictionary<int, float> stewardTotalHours = new Dictionary<int, float>();
 
             // Initialize with current monthly hours
             foreach (var steward in allStewards)
             {
-                stewardHours[steward.StewardId] = steward.MonthlyHours;
+                stewardTotalHours[steward.StewardId] = steward.MonthlyHours;
             }
 
             // Add hours from the schedule
-            foreach (var assignment in schedule.FlightAssignments)
+            foreach (var kvp in schedule.StewardHours)
             {
-                foreach (var steward in assignment.BusinessStewards.Concat(assignment.EconomyStewards))
+                int stewardId = kvp.Key;
+                float scheduledHours = kvp.Value;
+
+                if (stewardTotalHours.ContainsKey(stewardId))
                 {
-                    if (stewardHours.ContainsKey(steward.StewardId))
-                        stewardHours[steward.StewardId] += assignment.Flight.FlightTime;
-                    else
-                        stewardHours[steward.StewardId] = assignment.Flight.FlightTime;
+                    stewardTotalHours[stewardId] += scheduledHours;
                 }
             }
 
             // Only consider stewards who are actually assigned to flights
-            var activeHours = stewardHours.Where(kv => kv.Value > 0).Select(kv => kv.Value).ToList();
+            var activeHours = stewardTotalHours
+                .Where(kv => schedule.StewardHours.ContainsKey(kv.Key) && schedule.StewardHours[kv.Key] > 0)
+                .Select(kv => kv.Value)
+                .ToList();
 
             if (activeHours.Count == 0)
                 return 0;

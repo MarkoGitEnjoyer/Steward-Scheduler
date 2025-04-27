@@ -8,6 +8,9 @@ namespace Scheduler.Core.Models
 {
     public class WeeklySchedule
     {
+        private const float MAX_HOURS_LIMIT = 90.0f;
+        private const float SAFETY_MARGIN = 0.1f; // Small safety margin to prevent rounding errors
+
         public DateTime WeekStart { get; set; }
         public DateTime WeekEnd { get; set; }
         public List<FlightAssignment> FlightAssignments { get; set; } = new List<FlightAssignment>();
@@ -21,15 +24,57 @@ namespace Scheduler.Core.Models
         // Fitness score for genetic algorithm
         public float FitnessScore { get; set; }
 
+        // Check if adding more hours to a steward would exceed the 90-hour limit
+        public bool WouldExceedHourLimit(int stewardId, float monthlyHours, float additionalHours)
+        {
+            float currentScheduledHours = GetStewardScheduledHours(stewardId);
+            return (monthlyHours + currentScheduledHours + additionalHours) > (MAX_HOURS_LIMIT - SAFETY_MARGIN);
+        }
+
+        // Add hours to a steward's schedule - return success/failure
+        public bool AddStewardHours(int stewardId, float hours)
+        {
+            if (!StewardHours.ContainsKey(stewardId))
+            {
+                StewardHours[stewardId] = 0;
+            }
+
+            StewardHours[stewardId] += hours;
+            return true;
+        }
+
+        // Remove hours from a steward's schedule
+        public void RemoveStewardHours(int stewardId, float hours)
+        {
+            if (StewardHours.ContainsKey(stewardId))
+            {
+                StewardHours[stewardId] -= hours;
+                if (StewardHours[stewardId] < 0)
+                {
+                    StewardHours[stewardId] = 0;
+                }
+            }
+        }
+
+        // Get a steward's current scheduled hours
+        public float GetStewardScheduledHours(int stewardId)
+        {
+            if (StewardHours.ContainsKey(stewardId))
+            {
+                return StewardHours[stewardId];
+            }
+            return 0;
+        }
+
+        // Get a steward's total hours (monthly base + scheduled)
+        public float GetStewardTotalHours(int stewardId, float baseMonthlyHours)
+        {
+            return baseMonthlyHours + GetStewardScheduledHours(stewardId);
+        }
+
         // Initialize steward hours for the entire schedule
         public void InitializeStewardHours(List<StewardDto> stewards)
         {
-            // Reset all stewards' projected hours to their base monthly hours
-            foreach (var steward in stewards)
-            {
-                steward.InitializeProjectedHours();
-            }
-
             // Clear the tracking dictionary
             StewardHours.Clear();
 
@@ -46,9 +91,6 @@ namespace Scheduler.Core.Models
                         StewardHours[steward.StewardId] = 0;
                     }
                     StewardHours[steward.StewardId] += flightTime;
-
-                    // Update the steward's projected hours
-                    steward.AddHours(flightTime);
                 }
             }
         }
@@ -70,9 +112,6 @@ namespace Scheduler.Core.Models
 
             if (removed)
             {
-                // Update the steward's hours
-                steward.RemoveHours(assignment.Flight.FlightTime);
-
                 // Update tracking dictionary
                 if (StewardHours.ContainsKey(steward.StewardId))
                 {
@@ -92,31 +131,21 @@ namespace Scheduler.Core.Models
         }
 
         // Verify that no steward exceeds 90 hours
-        public bool VerifyHourConstraints()
+        public bool VerifyHourConstraints(List<StewardDto> stewards)
         {
+            var stewardMap = stewards.ToDictionary(s => s.StewardId);
+
             foreach (var entry in StewardHours)
             {
                 int stewardId = entry.Key;
                 float scheduledHours = entry.Value;
 
-                // Get the steward from any assignment
-                StewardDto steward = null;
-                foreach (var assignment in FlightAssignments)
-                {
-                    steward = assignment.BusinessStewards
-                        .Concat(assignment.EconomyStewards)
-                        .FirstOrDefault(s => s.StewardId == stewardId);
-
-                    if (steward != null)
-                        break;
-                }
-
-                if (steward != null)
+                if (stewardMap.TryGetValue(stewardId, out var steward))
                 {
                     // Calculate total hours (base + scheduled)
                     float totalHours = steward.MonthlyHours + scheduledHours;
 
-                    if (totalHours > 90)
+                    if (totalHours > MAX_HOURS_LIMIT)
                     {
                         Console.WriteLine($"Hour constraint violation: Steward {stewardId} has {totalHours} hours");
                         return false;
@@ -182,7 +211,5 @@ namespace Scheduler.Core.Models
             StewardHours[stewardId] = hours;
             return hours;
         }
-
-        
     }
 }

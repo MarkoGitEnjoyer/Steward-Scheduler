@@ -20,9 +20,6 @@ namespace Scheduler.Core.Models
         // Current hours in the database for this month
         public float MonthlyHours { get; set; }
 
-        // Projected hours including new assignments - for enforcing 90-hour constraint
-        public float ProjectedHours { get; set; }
-
         public List<int> LicenseIds { get; set; } = new List<int>();
         public List<string> LicensedAircraftTypes { get; set; } = new List<string>();
 
@@ -32,7 +29,8 @@ namespace Scheduler.Core.Models
 
         public float ExperienceYears => (float)(DateTime.Now - JoiningDate).TotalDays / 365;
         public float FeedbackScore => PositiveFeedbackCount - NegativeFeedbackCount;
-        // Add this dictionary as a static field to the StewardDto class
+
+        // Aircraft license mapping for quick lookup
         private static readonly Dictionary<string, int> AircraftLicenseMap = new Dictionary<string, int>
         {
             { "A321", 1 },
@@ -41,60 +39,6 @@ namespace Scheduler.Core.Models
             { "B747", 4 },
             { "A350", 5 }
         };
-
-        // IMPROVED 90-hour constraint check with safety margin
-        public bool WouldExceedHourLimit(float additionalHours)
-        {
-            const float hourLimit = 90.0f;
-            const float safetyMargin = 0.1f; // Small safety margin to prevent rounding errors
-
-            return (ProjectedHours + additionalHours) > (hourLimit - safetyMargin);
-        }
-
-        // Helper to initialize and update projected hours
-        public void InitializeProjectedHours()
-        {
-            ProjectedHours = MonthlyHours;
-        }
-
-        // Safely add hours while tracking the limit - return success/failure
-        public bool AddHours(float hours)
-        {
-            if (WouldExceedHourLimit(hours))
-            {
-                return false;
-            }
-
-            ProjectedHours += hours;
-            return true;
-        }
-
-        // Remove hours (for when flights are unassigned)
-        public void RemoveHours(float hours)
-        {
-            ProjectedHours -= hours;
-            // Safety check to prevent negative values
-            if (ProjectedHours < MonthlyHours)
-                ProjectedHours = MonthlyHours;
-        }
-
-        public static bool DoFlightsOverlap(FlightDto flight1, FlightDto flight2)
-        {
-            return (flight1.DepartureTime <= flight2.ArrivalTime &&
-                    flight1.ArrivalTime >= flight2.DepartureTime);
-        }
-
-        public static bool HasEnoughRestBetween(FlightDto flight1, FlightDto flight2)
-        {
-            // Determine which flight comes first
-            var earlierFlight = flight1.DepartureTime < flight2.DepartureTime ? flight1 : flight2;
-            var laterFlight = earlierFlight == flight1 ? flight2 : flight1;
-
-            // Check if there's at least 12 hours between the end of the earlier flight
-            // and the start of the later flight
-            TimeSpan restTime = laterFlight.DepartureTime - earlierFlight.ArrivalTime;
-            return restTime.TotalHours >= 12;
-        }
 
         public bool IsAvailable(DateTime flightDepartureTime, float flightDuration)
         {
@@ -108,13 +52,19 @@ namespace Scheduler.Core.Models
 
         public bool IsAvailableForFlight(FlightDto flight, WeeklySchedule schedule)
         {
-            // Check 90-hour constraint - HARD LIMIT
-            if (WouldExceedHourLimit(flight.FlightTime))
+            // Check 90-hour constraint using schedule's tracking
+            float currentScheduledHours = 0;
+            if (schedule.StewardHours.ContainsKey(StewardId))
+            {
+                currentScheduledHours = schedule.StewardHours[StewardId];
+            }
+
+            if (MonthlyHours + currentScheduledHours + flight.FlightTime > 90)
             {
                 return false;
             }
 
-            // First check basic availability
+            // Check basic availability
             if (!IsAvailable(flight.DepartureTime, flight.FlightTime))
                 return false;
 
@@ -157,6 +107,24 @@ namespace Scheduler.Core.Models
             return false;
         }
 
+        public static bool DoFlightsOverlap(FlightDto flight1, FlightDto flight2)
+        {
+            return (flight1.DepartureTime <= flight2.ArrivalTime &&
+                    flight1.ArrivalTime >= flight2.DepartureTime);
+        }
+
+        public static bool HasEnoughRestBetween(FlightDto flight1, FlightDto flight2)
+        {
+            // Determine which flight comes first
+            var earlierFlight = flight1.DepartureTime < flight2.DepartureTime ? flight1 : flight2;
+            var laterFlight = earlierFlight == flight1 ? flight2 : flight1;
+
+            // Check if there's at least 12 hours between the end of the earlier flight
+            // and the start of the later flight
+            TimeSpan restTime = laterFlight.DepartureTime - earlierFlight.ArrivalTime;
+            return restTime.TotalHours >= 12;
+        }
+
         // Clone method for deep copying
         public StewardDto Clone()
         {
@@ -169,7 +137,6 @@ namespace Scheduler.Core.Models
                 IsSenior = this.IsSenior,
                 JoiningDate = this.JoiningDate,
                 MonthlyHours = this.MonthlyHours,
-                ProjectedHours = this.ProjectedHours,
                 PositiveFeedbackCount = this.PositiveFeedbackCount,
                 NegativeFeedbackCount = this.NegativeFeedbackCount
             };

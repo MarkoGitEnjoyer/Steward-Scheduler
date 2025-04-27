@@ -36,12 +36,6 @@ namespace Scheduler.Core.Services
             // Get all stewards with their current monthly hours
             var stewards = await GetAllStewardsWithDetailsAsync(weekStart);
 
-            // Initialize projected hours to match current monthly hours
-            foreach (var steward in stewards)
-            {
-                steward.InitializeProjectedHours();
-            }
-
             Console.WriteLine($"Generating schedule with {stewards.Count} stewards and {flights.Count} flights.");
 
             // Sort flights by priority for better initial scheduling
@@ -56,8 +50,7 @@ namespace Scheduler.Core.Services
                 new SchedulingWeights());
 
             // Verify hour constraints in initial schedule
-            initialSchedule.InitializeStewardHours(stewards);
-            if (!initialSchedule.VerifyHourConstraints())
+            if (!initialSchedule.VerifyHourConstraints(stewards))
             {
                 Console.WriteLine("WARNING: Initial schedule violates 90-hour constraint!");
                 RemoveFlightsFromOverworkedStewards(initialSchedule, stewards);
@@ -78,11 +71,10 @@ namespace Scheduler.Core.Services
             schedule.TotalFlightCount = totalFlights;
 
             // Final verification
-            schedule.InitializeStewardHours(stewards);
-            if (!schedule.VerifyHourConstraints())
+            if (!schedule.VerifyHourConstraints(stewards))
             {
                 Console.WriteLine("WARNING: Final schedule violates 90-hour constraint! Falling back to initial schedule.");
-                initialSchedule.VerifyHourConstraints(); // Verify initial schedule again
+                initialSchedule.VerifyHourConstraints(stewards); // Verify initial schedule again
                 return initialSchedule;
             }
 
@@ -97,10 +89,13 @@ namespace Scheduler.Core.Services
         // Helper method to fix overworked stewards
         private void RemoveFlightsFromOverworkedStewards(WeeklySchedule schedule, List<StewardDto> stewards)
         {
+            // Create a steward ID to steward mapping for easy lookup
+            var stewardMap = stewards.ToDictionary(s => s.StewardId);
+
             // Get all stewards who have more than 90 hours
             var overworkedStewardIds = schedule.StewardHours
                 .Where(kv => {
-                    var steward = stewards.FirstOrDefault(s => s.StewardId == kv.Key);
+                    var steward = stewardMap.GetValueOrDefault(kv.Key);
                     return steward != null && steward.MonthlyHours + kv.Value > 90;
                 })
                 .Select(kv => kv.Key)
@@ -108,10 +103,11 @@ namespace Scheduler.Core.Services
 
             foreach (var stewardId in overworkedStewardIds)
             {
-                var steward = stewards.FirstOrDefault(s => s.StewardId == stewardId);
+                var steward = stewardMap.GetValueOrDefault(stewardId);
                 if (steward == null) continue;
 
-                Console.WriteLine($"Fixing overworked steward {stewardId}: Base={steward.MonthlyHours}h, Added={schedule.StewardHours[stewardId]}h, Total={steward.MonthlyHours + schedule.StewardHours[stewardId]}h");
+                float totalHours = steward.MonthlyHours + schedule.GetStewardScheduledHours(stewardId);
+                Console.WriteLine($"Fixing overworked steward {stewardId}: Base={steward.MonthlyHours}h, Added={schedule.GetStewardScheduledHours(stewardId)}h, Total={totalHours}h");
 
                 // Get flights assigned to this steward
                 if (!schedule.StewardSchedules.ContainsKey(stewardId)) continue;
@@ -122,7 +118,7 @@ namespace Scheduler.Core.Services
                 assignments = assignments.OrderBy(a => a.Priority).ToList();
 
                 // Start removing lowest priority flights until hours are under 90
-                float hoursToRemove = steward.MonthlyHours + schedule.StewardHours[stewardId] - 90;
+                float hoursToRemove = totalHours - 90;
                 Console.WriteLine($"Need to remove {hoursToRemove} hours from steward {stewardId}");
 
                 while (hoursToRemove > 0 && assignments.Any())
@@ -162,28 +158,16 @@ namespace Scheduler.Core.Services
                                 if (schedule.StewardSchedules[s.StewardId].Contains(flight))
                                 {
                                     schedule.StewardSchedules[s.StewardId].Remove(flight);
-
-                                    // Update hours too
-                                    if (schedule.StewardHours.ContainsKey(s.StewardId))
-                                    {
-                                        schedule.StewardHours[s.StewardId] -= flight.FlightTime;
-                                    }
-
-                                    s.RemoveHours(flight.FlightTime);
+                                    schedule.RemoveStewardHours(s.StewardId, flight.FlightTime);
                                 }
                             }
                         }
                     }
                 }
 
-                // Recalculate projected hours
-                steward.InitializeProjectedHours();
-                if (schedule.StewardHours.ContainsKey(stewardId))
-                {
-                    steward.AddHours(schedule.StewardHours[stewardId]);
-                }
-
-                Console.WriteLine($"After fixing: Steward {stewardId} now has {steward.ProjectedHours}h total");
+                // Recalculate hours
+                float newTotalHours = steward.MonthlyHours + schedule.GetStewardScheduledHours(stewardId);
+                Console.WriteLine($"After fixing: Steward {stewardId} now has {newTotalHours}h total");
             }
         }
 
@@ -371,7 +355,9 @@ namespace Scheduler.Core.Services
 
                 return false;
             }
-        }        // Get a previously saved schedule for a week
+        }
+
+        // Get a previously saved schedule for a week
         public async Task<WeeklySchedule> GetScheduleForWeekAsync(DateTime weekStart)
         {
             // Normalize to the start of the week (Monday)
@@ -422,16 +408,14 @@ namespace Scheduler.Core.Services
                             schedule.StewardSchedules[steward.StewardId] = new List<FlightDto>();
 
                         schedule.StewardSchedules[steward.StewardId].Add(flight);
+
+                        // Add flight hours to schedule tracking
+                        schedule.AddStewardHours(steward.StewardId, flight.FlightTime);
                     }
                 }
 
-               
-                    schedule.FlightAssignments.Add(flightAssignment);
-                
+                schedule.FlightAssignments.Add(flightAssignment);
             }
-
-            // Initialize steward hours
-            schedule.InitializeStewardHours(stewards);
 
             // Calculate fitness score
             schedule.FitnessScore = FitnessCalculator.CalculateScheduleFitness(schedule, stewards);
@@ -457,8 +441,6 @@ namespace Scheduler.Core.Services
                 .Select(a => MapFlightToDto(a.Flight))
                 .OrderBy(f => f.DepartureTime)
                 .ToList();
-
-
 
             return flights;
         }
@@ -515,7 +497,6 @@ namespace Scheduler.Core.Services
             int year = weekStart.Year;
             int month = weekStart.Month;
 
-
             foreach (var steward in stewards)
             {
                 var dto = new StewardDto
@@ -536,10 +517,6 @@ namespace Scheduler.Core.Services
                 // Set the monthly hours
                 dto.MonthlyHours = monthlyHours;
 
-
-                // Initialize projected hours to match current hours
-                dto.InitializeProjectedHours();
-
                 // Get license IDs
                 var licenseIds = await _unitOfWork.Stewards.GetStewardLicenseIdsAsync(steward.StewardId);
                 dto.LicenseIds = licenseIds.ToList();
@@ -559,6 +536,7 @@ namespace Scheduler.Core.Services
 
             return dtos;
         }
+
         private FlightDto MapFlightToDto(Flight flight)
         {
             return new FlightDto

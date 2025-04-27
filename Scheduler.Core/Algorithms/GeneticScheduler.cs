@@ -45,11 +45,10 @@ namespace Scheduler.Core.Algorithms
                 // IMPORTANT: Create a completely new copy of stewards for each run
                 var freshStewards = DeepCopyStewards(stewards);
 
-                // Reset projected hours to base monthly hours for each steward
+                // Reset last flight time for each steward
                 foreach (var steward in freshStewards)
                 {
-                    steward.InitializeProjectedHours();
-                    steward.LastFlightEndTime = null; // Reset last flight time too
+                    steward.LastFlightEndTime = null; // Reset last flight time
                 }
 
                 // Now generate schedule with fresh stewards
@@ -402,7 +401,7 @@ namespace Scheduler.Core.Algorithms
                 {
                     if (!stewardHours.ContainsKey(steward.StewardId))
                     {
-                        stewardHours[steward.StewardId] = steward.MonthlyHours;
+                        stewardHours[steward.StewardId] = 0;
                     }
                 }
             }
@@ -655,10 +654,7 @@ namespace Scheduler.Core.Algorithms
 
             // Rebuild steward schedules from our temp tracking
             child.StewardSchedules = tempStewardSchedules;
-            child.StewardHours = stewardHours.ToDictionary(
-                kvp => kvp.Key,
-                kvp => kvp.Value - (stewardHours.ContainsKey(kvp.Key) ? stewardHours[kvp.Key] : 0)
-            );
+            child.StewardHours = stewardHours;
 
             return child;
         }
@@ -710,9 +706,6 @@ namespace Scheduler.Core.Algorithms
 
             // Rebuild steward schedules
             RebuildStewardSchedules(schedule);
-
-            // Sync steward ProjectedHours with the schedule's hour tracking
-            SyncStewardProjectedHours(schedule);
 
             return schedule;
         }
@@ -852,8 +845,7 @@ namespace Scheduler.Core.Algorithms
                     {
                         // Pick a replacement with preference for stewards with fewer hours
                         var replacement = candidates
-                            .OrderBy(s => s.MonthlyHours + (schedule.StewardHours.ContainsKey(s.StewardId) ?
-                                schedule.StewardHours[s.StewardId] : 0))
+                            .OrderBy(s => s.MonthlyHours + schedule.GetStewardScheduledHours(s.StewardId))
                             .First();
 
                         // Replace in the flight assignment
@@ -880,8 +872,7 @@ namespace Scheduler.Core.Algorithms
                     {
                         // Pick a replacement with preference for stewards with fewer hours
                         var replacement = candidates
-                            .OrderBy(s => s.MonthlyHours + (schedule.StewardHours.ContainsKey(s.StewardId) ?
-                                schedule.StewardHours[s.StewardId] : 0))
+                            .OrderBy(s => s.MonthlyHours + schedule.GetStewardScheduledHours(s.StewardId))
                             .First();
 
                         // Replace in the flight assignment
@@ -1188,12 +1179,12 @@ namespace Scheduler.Core.Algorithms
         {
             return !HasOverlappingFlights(schedule) &&
                    ValidateScheduleRestTimes(schedule) &&
-                   VerifyHourConstraints(schedule, null) &&
+                   VerifyHourConstraints(schedule) &&
                    schedule.FlightAssignments.Count > 0;
         }
 
         // Check hour constraints for all stewards
-        private bool VerifyHourConstraints(WeeklySchedule schedule, List<StewardDto> allStewards)
+        private bool VerifyHourConstraints(WeeklySchedule schedule)
         {
             // Create a dictionary to track total hours
             var totalHours = new Dictionary<int, float>();
@@ -1301,7 +1292,6 @@ namespace Scheduler.Core.Algorithms
                     LastFlightEndTime = steward.LastFlightEndTime,
                     // IMPORTANT: Make sure hours are properly copied
                     MonthlyHours = steward.MonthlyHours,
-                    ProjectedHours = steward.MonthlyHours, // Reset to base hours
                     PositiveFeedbackCount = steward.PositiveFeedbackCount,
                     NegativeFeedbackCount = steward.NegativeFeedbackCount
                 };
@@ -1327,9 +1317,6 @@ namespace Scheduler.Core.Algorithms
             schedule.StewardSchedules.Clear();
             schedule.StewardHours.Clear();
 
-            // Dictionary to track hours
-            Dictionary<int, float> totalHours = new Dictionary<int, float>();
-
             // Rebuild from flight assignments
             foreach (var assignment in schedule.FlightAssignments)
             {
@@ -1347,12 +1334,6 @@ namespace Scheduler.Core.Algorithms
                         schedule.StewardHours[steward.StewardId] = 0;
 
                     schedule.StewardHours[steward.StewardId] += flightTime;
-
-                    // Track total hours including monthly baseline
-                    if (!totalHours.ContainsKey(steward.StewardId))
-                        totalHours[steward.StewardId] = steward.MonthlyHours;
-
-                    totalHours[steward.StewardId] += flightTime;
                 }
 
                 foreach (var steward in assignment.EconomyStewards)
@@ -1367,12 +1348,6 @@ namespace Scheduler.Core.Algorithms
                         schedule.StewardHours[steward.StewardId] = 0;
 
                     schedule.StewardHours[steward.StewardId] += flightTime;
-
-                    // Track total hours including monthly baseline
-                    if (!totalHours.ContainsKey(steward.StewardId))
-                        totalHours[steward.StewardId] = steward.MonthlyHours;
-
-                    totalHours[steward.StewardId] += flightTime;
                 }
             }
 
@@ -1406,25 +1381,6 @@ namespace Scheduler.Core.Algorithms
                     if (steward != null)
                     {
                         steward.LastFlightEndTime = lastArrival;
-                    }
-                }
-            }
-        }
-
-        // Sync steward ProjectedHours with schedule's hours tracking
-        private void SyncStewardProjectedHours(WeeklySchedule schedule)
-        {
-            foreach (var assignment in schedule.FlightAssignments)
-            {
-                foreach (var steward in assignment.BusinessStewards.Concat(assignment.EconomyStewards))
-                {
-                    // Reset to base hours first
-                    steward.InitializeProjectedHours();
-
-                    // Then add scheduled hours
-                    if (schedule.StewardHours.ContainsKey(steward.StewardId))
-                    {
-                        steward.ProjectedHours = steward.MonthlyHours + schedule.StewardHours[steward.StewardId];
                     }
                 }
             }
