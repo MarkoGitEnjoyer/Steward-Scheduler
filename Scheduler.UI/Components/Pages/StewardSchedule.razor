@@ -1,9 +1,8 @@
 ﻿@page "/steward-schedule"
-@using Scheduler.Core.Services
-@using Scheduler.Core.Models
-@using Scheduler.Data
-@inject ISchedulingService SchedulingService
-@inject IUnitOfWork UnitOfWork
+@using Scheduler.UI.Controllers
+@using Scheduler.UI.Models
+@inject StewardController StewardController
+@inject NavigationManager NavigationManager
 
 <PageTitle>Steward Schedule - Scheduler Steward</PageTitle>
 
@@ -21,19 +20,19 @@
                     <div class="input-group">
                         <button class="btn btn-outline-secondary"
                                 @onclick="PreviousSteward"
-                                disabled="@(stewards.Count == 0 || isLoading)">
+                                disabled="@(model.AvailableStewards.Count == 0 || model.IsLoading)">
                             <i class="oi oi-chevron-left"></i>
                         </button>
                         <select class="form-select" id="stewardSelect" @bind="selectedStewardId">
                             <option value="0">-- Select a Steward --</option>
-                            @foreach (var steward in stewards)
+                            @foreach (var steward in model.AvailableStewards)
                             {
                                 <option value="@steward.StewardId">@steward.FirstName @steward.LastName (@steward.Role)</option>
                             }
                         </select>
                         <button class="btn btn-outline-secondary"
                                 @onclick="NextSteward"
-                                disabled="@(stewards.Count == 0 || isLoading)">
+                                disabled="@(model.AvailableStewards.Count == 0 || model.IsLoading)">
                             <i class="oi oi-chevron-right"></i>
                         </button>
                     </div>
@@ -50,8 +49,8 @@
                 <div class="d-grid">
                     <button class="btn btn-primary"
                             @onclick="LoadStewardSchedule"
-                            disabled="@(selectedStewardId == 0 || isLoading)">
-                        @if (isLoading)
+                            disabled="@(selectedStewardId == 0 || model.IsLoading)">
+                        @if (model.IsLoading)
                         {
                             <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
                             <span> Loading...</span>
@@ -67,7 +66,7 @@
     </div>
 
     <div class="col-md-6">
-        @if (selectedSteward != null)
+        @if (model.SelectedSteward != null)
         {
             <div class="card">
                 <div class="card-header bg-info text-white">
@@ -76,49 +75,49 @@
                 <div class="card-body">
                     <div class="row">
                         <div class="col-md-8">
-                            <h4>@selectedSteward.FirstName @selectedSteward.LastName</h4>
+                            <h4>@model.SelectedSteward.FirstName @model.SelectedSteward.LastName</h4>
                             <p class="mb-1">
-                                <strong>Role:</strong> @selectedSteward.Role
-                                @if (selectedSteward.IsSenior)
+                                <strong>Role:</strong> @model.SelectedSteward.Role
+                                @if (model.SelectedSteward.IsSenior)
                                 {
                                     <span class="badge bg-danger ms-2">Senior</span>
                                 }
                             </p>
-                            <p class="mb-1"><strong>ID:</strong> @selectedSteward.StewardId</p>
-                            <p class="mb-1"><strong>Joined:</strong> @selectedSteward.JoiningDate.ToString("d")</p>
+                            <p class="mb-1"><strong>ID:</strong> @model.SelectedSteward.StewardId</p>
+                            <p class="mb-1"><strong>Joined:</strong> @model.SelectedSteward.JoiningDate.ToString("d")</p>
                             <p class="mb-1">
                                 <strong>Experience:</strong>
-                                @(Math.Round(selectedSteward.ExperienceYears, 1)) years
+                                @(Math.Round(model.SelectedSteward.ExperienceYears, 1)) years
                             </p>
                             <p class="mb-1">
                                 <strong>Current Month Hours:</strong>
-                                @selectedSteward.MonthlyHours / 90 hours
+                                @model.SelectedSteward.MonthlyHours / 90 hours
                             </p>
                             <p class="mb-1">
                                 <strong>Feedback Rating:</strong>
-                                @(selectedSteward.PositiveFeedbackCount - selectedSteward.NegativeFeedbackCount)
-                                (@selectedSteward.PositiveFeedbackCount positive, @selectedSteward.NegativeFeedbackCount negative)
+                                @(model.SelectedSteward.PositiveFeedbackCount - model.SelectedSteward.NegativeFeedbackCount)
+                                (@model.SelectedSteward.PositiveFeedbackCount positive, @model.SelectedSteward.NegativeFeedbackCount negative)
                             </p>
                         </div>
                         <div class="col-md-4">
                             <div class="progress mb-2" style="height: 20px;">
                                 <div class="progress-bar"
                                      role="progressbar"
-                                     style="width: @(Math.Min(100, selectedSteward.MonthlyHours / 90 * 100))%;"
-                                     aria-valuenow="@selectedSteward.MonthlyHours"
+                                     style="width: @(Math.Min(100, model.SelectedSteward.MonthlyHours / 90 * 100))%;"
+                                     aria-valuenow="@model.SelectedSteward.MonthlyHours"
                                      aria-valuemin="0"
                                      aria-valuemax="90">
-                                    @selectedSteward.MonthlyHours hrs
+                                    @model.SelectedSteward.MonthlyHours hrs
                                 </div>
                             </div>
                             <div class="mt-3">
                                 <h6>Languages:</h6>
                                 <div>
-                                    @foreach (var language in stewardLanguages)
+                                    @foreach (var language in model.SelectedSteward.Languages)
                                     {
                                         <span class="badge bg-primary me-1 mb-1">@language</span>
                                     }
-                                    @if (!stewardLanguages.Any())
+                                    @if (!model.SelectedSteward.Languages.Any())
                                     {
                                         <span class="text-muted">No language data</span>
                                     }
@@ -127,11 +126,11 @@
                             <div class="mt-3">
                                 <h6>Aircraft Licenses:</h6>
                                 <div>
-                                    @foreach (var license in stewardLicenses)
+                                    @foreach (var license in model.SelectedSteward.Licenses)
                                     {
                                         <span class="badge bg-success me-1 mb-1">@license</span>
                                     }
-                                    @if (!stewardLicenses.Any())
+                                    @if (!model.SelectedSteward.Licenses.Any())
                                     {
                                         <span class="text-muted">No license data</span>
                                     }
@@ -145,12 +144,12 @@
     </div>
 </div>
 
-@if (scheduleFlights.Any())
+@if (model.ScheduledFlights.Any())
 {
     <div class="card">
         <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
-            <h5 class="mb-0">Schedule for Week: @formattedWeekRange</h5>
-            <span class="badge bg-light text-dark">@scheduleFlights.Count Flights</span>
+            <h5 class="mb-0">Schedule for Week: @model.FormattedWeekRange</h5>
+            <span class="badge bg-light text-dark">@model.ScheduledFlights.Count Flights</span>
         </div>
         <div class="card-body">
             <div class="table-responsive">
@@ -167,7 +166,7 @@
                         </tr>
                     </thead>
                     <tbody>
-                        @foreach (var flight in scheduleFlights.OrderBy(f => f.DepartureTime))
+                        @foreach (var flight in model.ScheduledFlights.OrderBy(f => f.DepartureTime))
                         {
                             <tr>
                                 <td>@flight.DepartureTime.ToString("ddd, MMM d")</td>
@@ -199,7 +198,7 @@
                                     <th style="width: 12%">Time</th>
                                     @for (int i = 0; i < 7; i++)
                                     {
-                                        var day = weekStart.AddDays(i);
+                                        var day = model.WeekStart.AddDays(i);
                                         <th style="width: 12%">@day.ToString("ddd, MMM d")</th>
                                     }
                                 </tr>
@@ -211,11 +210,11 @@
                                         <td class="text-center">@($"{hour:00}:00")</td>
                                         @for (int day = 0; day < 7; day++)
                                         {
-                                            var currentDay = weekStart.AddDays(day);
+                                            var currentDay = model.WeekStart.AddDays(day);
                                             var startHour = new DateTime(currentDay.Year, currentDay.Month, currentDay.Day, hour, 0, 0);
                                             var endHour = startHour.AddHours(1);
 
-                                            var flightsInHour = scheduleFlights.Where(f =>
+                                            var flightsInHour = model.ScheduledFlights.Where(f =>
                                             (f.DepartureTime >= startHour && f.DepartureTime < endHour) ||
                                             (f.DepartureTime < startHour && f.ArrivalTime > startHour)).ToList();
 
@@ -250,11 +249,19 @@
         </div>
     </div>
 }
-else if (!isLoading && selectedStewardId > 0)
+else if (!model.IsLoading && selectedStewardId > 0)
 {
     <div class="alert alert-info mt-4">
         <h4><i class="oi oi-info"></i> No Flights Scheduled</h4>
         <p>There are no flights scheduled for this steward in the selected week.</p>
+    </div>
+}
+
+@if (!string.IsNullOrEmpty(model.ErrorMessage))
+{
+    <div class="alert alert-danger mt-3">
+        <h4><i class="oi oi-warning"></i> Error</h4>
+        <p>@model.ErrorMessage</p>
     </div>
 }
 
@@ -299,29 +306,19 @@ else if (!isLoading && selectedStewardId > 0)
 
 @code {
     private int selectedStewardId = 0;
-    private DateTime selectedDate = new DateTime(2025, 2, 17);
-    private DateTime weekStart = new DateTime(2025, 2, 17);
-    private bool isLoading = false;
-    private List<Scheduler.Data.Models.Steward> stewards = new List<Scheduler.Data.Models.Steward>();
-    private StewardDto selectedSteward;
-    private List<FlightDto> scheduleFlights = new List<FlightDto>();
-    private List<string> stewardLanguages = new List<string>();
-    private List<string> stewardLicenses = new List<string>();
-
-    private string formattedWeekRange =>
-        $"{weekStart:MMM dd} - {weekStart.AddDays(6):MMM dd, yyyy}";
+    private DateTime selectedDate = DateTime.Now;
+    private StewardScheduleViewModel model = new StewardScheduleViewModel();
 
     protected override async Task OnInitializedAsync()
     {
         AdjustSelectedDateToMonday();
-        weekStart = selectedDate;
-
-        await LoadStewards();
+        await LoadStewardList();
     }
 
-    private async Task LoadStewards()
+    private async Task LoadStewardList()
     {
-        stewards = (await UnitOfWork.Stewards.GetAllAsync()).ToList();
+        // Just load the list of stewards without a specific schedule
+        model = await StewardController.GetStewardScheduleAsync(0, selectedDate);
     }
 
     private void AdjustSelectedDateToMonday()
@@ -332,40 +329,40 @@ else if (!isLoading && selectedStewardId > 0)
 
     private void CurrentWeek()
     {
-        selectedDate = new DateTime(2025, 2, 17);
+        selectedDate = DateTime.Now;
         AdjustSelectedDateToMonday();
     }
 
     private async Task NextSteward()
     {
-        if (stewards.Count == 0 || isLoading)
+        if (model.AvailableStewards.Count == 0 || model.IsLoading)
             return;
 
         // Find the current index
-        int currentIndex = stewards.FindIndex(s => s.StewardId == selectedStewardId);
+        int currentIndex = model.AvailableStewards.FindIndex(s => s.StewardId == selectedStewardId);
 
         // If not found or at the end, go to the first steward
-        if (currentIndex == -1 || currentIndex == stewards.Count - 1)
-            selectedStewardId = stewards.First().StewardId;
+        if (currentIndex == -1 || currentIndex == model.AvailableStewards.Count - 1)
+            selectedStewardId = model.AvailableStewards.First().StewardId;
         else
-            selectedStewardId = stewards[currentIndex + 1].StewardId;
+            selectedStewardId = model.AvailableStewards[currentIndex + 1].StewardId;
 
         await LoadStewardSchedule();
     }
 
     private async Task PreviousSteward()
     {
-        if (stewards.Count == 0 || isLoading)
+        if (model.AvailableStewards.Count == 0 || model.IsLoading)
             return;
 
         // Find the current index
-        int currentIndex = stewards.FindIndex(s => s.StewardId == selectedStewardId);
+        int currentIndex = model.AvailableStewards.FindIndex(s => s.StewardId == selectedStewardId);
 
         // If not found or at the beginning, go to the last steward
         if (currentIndex <= 0)
-            selectedStewardId = stewards.Last().StewardId;
+            selectedStewardId = model.AvailableStewards.Last().StewardId;
         else
-            selectedStewardId = stewards[currentIndex - 1].StewardId;
+            selectedStewardId = model.AvailableStewards[currentIndex - 1].StewardId;
 
         await LoadStewardSchedule();
     }
@@ -375,81 +372,7 @@ else if (!isLoading && selectedStewardId > 0)
         if (selectedStewardId <= 0)
             return;
 
-        try
-        {
-            isLoading = true;
-
-            // Adjust to Monday of the selected week
-            AdjustSelectedDateToMonday();
-            weekStart = selectedDate;
-
-            // Load steward details
-            var steward = await UnitOfWork.Stewards.GetByIdAsync(selectedStewardId);
-            if (steward != null)
-            {
-                // Map to DTO for the view
-                selectedSteward = new StewardDto
-                    {
-                        StewardId = steward.StewardId,
-                        FirstName = steward.FirstName,
-                        LastName = steward.LastName,
-                        Role = steward.Role.ToString(),
-                        IsSenior = steward.IsSenior,
-                        JoiningDate = steward.JoiningDate,
-                        LastFlightEndTime = steward.LastFlightEndTime,
-
-                    // Get monthly hours
-                        MonthlyHours = await UnitOfWork.Stewards.GetMonthlyHoursAsync(
-                                steward.StewardId,
-                                2025,
-                                2)
-                    };
-
-                // Get steward's languages
-                selectedSteward.LanguageIds = (await UnitOfWork.Stewards.GetStewardLanguageIdsAsync(steward.StewardId)).ToList();
-
-                // Get license IDs and populate the DTO
-                selectedSteward.LicenseIds = (await UnitOfWork.Stewards.GetStewardLicenseIdsAsync(steward.StewardId)).ToList();
-
-                // Get steward's languages names for display
-                stewardLanguages = (await UnitOfWork.Stewards.GetStewardLanguageNamesAsync(steward.StewardId)).ToList();
-
-                // Get steward's licenses names for display
-                stewardLicenses = (await UnitOfWork.Stewards.GetStewardLicenseNamesAsync(steward.StewardId)).ToList();
-                foreach (var sl in steward.StewardLanguages)
-                {
-                    var language = await UnitOfWork.Languages.GetByIdAsync(sl.LanguageId);
-                    if (language != null)
-                    {
-                        stewardLanguages.Add(language.LanguageName);
-                    }
-                }
-
-                // Get steward's licenses
-                foreach (var license in steward.StewardLicenses)
-                {
-                    var aircraftLicense = await UnitOfWork.AircraftTypes.GetByIdAsync(license.LicenseId);
-                    if (aircraftLicense != null)
-                    {
-                        stewardLicenses.Add(aircraftLicense.ToString());
-                    }
-                }
-
-                // Get feedback counts
-                selectedSteward.PositiveFeedbackCount = await UnitOfWork.Feedbacks.GetPositiveFeedbackCountAsync(steward.StewardId);
-                selectedSteward.NegativeFeedbackCount = await UnitOfWork.Feedbacks.GetNegativeFeedbackCountAsync(steward.StewardId);
-
-                // Load the steward's schedule for the selected week
-                scheduleFlights = await SchedulingService.GetStewardScheduleAsync(selectedStewardId, selectedDate);
-            }
-        }
-        catch (Exception)
-        {
-            // Handle error
-        }
-        finally
-        {
-            isLoading = false;
-        }
+        // Load the steward's schedule via the controller
+        model = await StewardController.GetStewardScheduleAsync(selectedStewardId, selectedDate);
     }
 }

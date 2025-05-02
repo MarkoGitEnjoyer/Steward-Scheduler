@@ -14,11 +14,11 @@
 
 @code {
     [Parameter]
-    public string Field { get; set; }
+    public string Field { get; set; } = string.Empty;
 
     [Parameter]
-    public string CurrentSort { get; set; }
+    public string CurrentSort { get; set; } = string.Empty;
 
     [Parameter]
-    public string Direction { get; set; }
+    public string Direction { get; set; } = "asc";
 }

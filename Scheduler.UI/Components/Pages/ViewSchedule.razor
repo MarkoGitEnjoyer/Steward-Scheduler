@@ -1,7 +1,7 @@
 ﻿@page "/view-schedule"
-@using Scheduler.Core.Services
-@using Scheduler.Core.Models
-@inject ISchedulingService SchedulingService
+@using Scheduler.UI.Controllers
+@using Scheduler.UI.Models
+@inject ScheduleController ScheduleController
 
 <PageTitle>View Schedule - Scheduler Steward</PageTitle>
 
@@ -33,13 +33,13 @@
 
 <div class="card mb-4">
     <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-        <h5 class="mb-0">Schedule: @formattedWeekRange</h5>
+        <h5 class="mb-0">Schedule: @model.FormattedWeekRange</h5>
         <div>
-            <span class="badge bg-info">Fitness Score: @(Math.Round(currentSchedule?.FitnessScore * 100 ?? 0, 1))%</span>
+            <span class="badge bg-info">Fitness Score: @(Math.Round(model.FitnessScore * 100, 1))%</span>
         </div>
     </div>
     <div class="card-body">
-        @if (isLoading)
+        @if (model.IsLoading)
         {
             <div class="text-center p-4">
                 <div class="spinner-border text-primary" role="status">
@@ -48,7 +48,7 @@
                 <p class="mt-2">Loading schedule...</p>
             </div>
         }
-        else if (currentSchedule == null || !currentSchedule.FlightAssignments.Any())
+        else if (!model.FlightAssignments.Any())
         {
             <div class="alert alert-warning">
                 <h4><i class="oi oi-warning"></i> No Schedule Found</h4>
@@ -82,7 +82,7 @@
                         <div class="btn-group w-100">
                             @for (int i = 0; i < 7; i++)
                             {
-                                var day = currentSchedule.WeekStart.AddDays(i);
+                                var day = model.WeekStart.AddDays(i);
                                 var isActive = selectedDay.Date == day.Date;
                                 int dayIndex = i; // Capture for lambda
                                 
@@ -97,11 +97,287 @@
                 </div>
                 
                 <h4>Flights on @selectedDay.ToString("dddd, MMMM d, yyyy")</h4>
-                <DayScheduleView Day="@selectedDay" Schedule="@currentSchedule" />
+                
+                
+                    var flightsForDay = model.FlightAssignments
+                        .Where(fa => fa.Flight.DepartureTime.Date == selectedDay.Date)
+                        .ToList();
+                
+                
+                @if (flightsForDay.Any())
+                {
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Time</th>
+                                    <th>Flight #</th>
+                                    <th>Destination</th>
+                                    <th>Aircraft</th>
+                                    <th>Duration</th>
+                                    <th>Business Class</th>
+                                    <th>Economy Class</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var flight in flightsForDay.OrderBy(f => f.Flight.DepartureTime))
+                                {
+                                    <tr>
+                                        <td>
+                                            @flight.Flight.DepartureTime.ToString("HH:mm") -
+                                            @flight.Flight.ArrivalTime.ToString("HH:mm")
+                                        </td>
+                                        <td>@flight.Flight.FlightNumber</td>
+                                        <td>@flight.Flight.Destination</td>
+                                        <td>@flight.Flight.AircraftType</td>
+                                        <td>@flight.Flight.FlightTime hours</td>
+                                        <td>
+                                            @if (flight.BusinessStewards.Any())
+                                            {
+                                                <div class="crew-list">
+                                                    @foreach (var steward in flight.BusinessStewards)
+                                                    {
+                                                        <div class="crew-member">
+                                                            <i class="oi oi-person"></i> @steward.FullName
+                                                            @if (steward.IsSenior)
+                                                            {
+                                                                <span class="badge bg-danger ms-1">Senior</span>
+                                                            }
+                                                        </div>
+                                                    }
+                                                </div>
+                                                <div class="text-muted mt-1">
+                                                    @flight.BusinessStewards.Count/@flight.Flight.RequiredBusinessCrew assigned
+                                                </div>
+                                            }
+                                            else
+                                            {
+                                                <span class="text-danger">Not assigned</span>
+                                            }
+                                        </td>
+                                        <td>
+                                            @if (flight.EconomyStewards.Any())
+                                            {
+                                                <div class="crew-list">
+                                                    @foreach (var steward in flight.EconomyStewards)
+                                                    {
+                                                        <div class="crew-member">
+                                                            <i class="oi oi-person"></i> @steward.FullName
+                                                        </div>
+                                                    }
+                                                </div>
+                                                <div class="text-muted mt-1">
+                                                    @flight.EconomyStewards.Count/@flight.Flight.RequiredEconomyCrew assigned
+                                                </div>
+                                            }
+                                            else
+                                            {
+                                                <span class="text-danger">Not assigned</span>
+                                            }
+                                        </td>
+                                        <td>
+                                            @if (flight.IsComplete)
+                                            {
+                                                <span class="badge bg-success">Complete</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge bg-warning text-dark">Incomplete</span>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+                else
+                {
+                    <div class="alert alert-info">
+                        <h5><i class="oi oi-info"></i> No Flights</h5>
+                        <p>There are no flights scheduled for this day.</p>
+                    </div>
+                }
             }
             else if (viewMode == "week")
             {
-                <WeekScheduleView Schedule="@currentSchedule" />
+                <div class="week-calendar">
+                    <div class="day-header">
+                        <div class="time-column"></div>
+                        @for (int i = 0; i < 7; i++)
+                        {
+                            var day = model.WeekStart.AddDays(i);
+                            <div class="day-column">
+                                <div class="day-name">@day.ToString("ddd")</div>
+                                <div class="day-date">@day.ToString("MMM dd")</div>
+                            </div>
+                        }
+                    </div>
+
+                    <div class="time-slots">
+                        @for (int hour = 0; hour < 24; hour++)
+                        {
+                            <div class="time-slot">
+                                <div class="time-label">@($"{hour:00}:00")</div>
+                                @for (int day = 0; day < 7; day++)
+                                {
+                                    <div class="day-slot">
+                                        @{
+                                            var currentDay = model.WeekStart.AddDays(day);
+                                            var slotStart = new DateTime(currentDay.Year, currentDay.Month, currentDay.Day, hour, 0, 0);
+                                            var slotEnd = slotStart.AddHours(1);
+
+                                            var flightsInSlot = model.FlightAssignments
+                                                .Where(fa =>
+                                                    (fa.Flight.DepartureTime >= slotStart && fa.Flight.DepartureTime < slotEnd) ||
+                                                    (fa.Flight.DepartureTime < slotStart && fa.Flight.ArrivalTime > slotStart))
+                                                .ToList();
+
+                                            foreach (var flight in flightsInSlot)
+                                            {
+                                                var isStart = flight.Flight.DepartureTime >= slotStart && flight.Flight.DepartureTime < slotEnd;
+
+                                                <div class="flight-event @(flight.IsComplete ? "complete" : "incomplete") @(isStart ? "flight-start" : "")">
+                                                    @if (isStart)
+                                                    {
+                                                        <div class="flight-time">@flight.Flight.DepartureTime.ToString("HH:mm")</div>
+                                                        <div class="flight-title">@flight.Flight.FlightNumber</div>
+                                                        <div class="flight-details">@flight.Flight.Destination</div>
+                                                    }
+                                                    else
+                                                    {
+                                                        <div class="in-flight-indicator">
+                                                            <i class="oi oi-arrow-right"></i> @flight.Flight.FlightNumber
+                                                        </div>
+                                                    }
+                                                </div>
+                                            }
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+                
+                <style>
+                    .week-calendar {
+                        display: flex;
+                        flex-direction: column;
+                        border: 1px solid #ddd;
+                        border-radius: 0.25rem;
+                        margin-top: 1rem;
+                    }
+
+                    .day-header {
+                        display: flex;
+                        background-color: #f8f9fa;
+                        border-bottom: 1px solid #ddd;
+                    }
+
+                    .time-column {
+                        width: 60px;
+                        border-right: 1px solid #ddd;
+                    }
+
+                    .day-column {
+                        flex: 1;
+                        text-align: center;
+                        padding: 8px 4px;
+                        border-right: 1px solid #ddd;
+                    }
+
+                    .day-column:last-child {
+                        border-right: none;
+                    }
+
+                    .day-name {
+                        font-weight: bold;
+                    }
+
+                    .day-date {
+                        font-size: 0.8rem;
+                        color: #6c757d;
+                    }
+
+                    .time-slots {
+                        display: flex;
+                        flex-direction: column;
+                    }
+
+                    .time-slot {
+                        display: flex;
+                        min-height: 60px;
+                        border-bottom: 1px solid #eee;
+                    }
+
+                    .time-slot:last-child {
+                        border-bottom: none;
+                    }
+
+                    .time-label {
+                        width: 60px;
+                        padding: 4px;
+                        text-align: center;
+                        font-size: 0.8rem;
+                        color: #6c757d;
+                        border-right: 1px solid #ddd;
+                    }
+
+                    .day-slot {
+                        flex: 1;
+                        padding: 4px;
+                        border-right: 1px solid #eee;
+                        position: relative;
+                    }
+
+                    .day-slot:last-child {
+                        border-right: none;
+                    }
+
+                    .flight-event {
+                        padding: 4px;
+                        margin-bottom: 2px;
+                        border-radius: 4px;
+                        font-size: 0.8rem;
+                        overflow: hidden;
+                    }
+
+                    .flight-start {
+                        border-left: 4px solid #0d6efd;
+                    }
+
+                    .complete {
+                        background-color: #d1e7dd;
+                    }
+
+                    .incomplete {
+                        background-color: #fff3cd;
+                    }
+
+                    .flight-time {
+                        font-weight: bold;
+                    }
+
+                    .flight-title {
+                        white-space: nowrap;
+                        overflow: hidden;
+                        text-overflow: ellipsis;
+                    }
+
+                    .flight-details {
+                        font-size: 0.75rem;
+                        white-space: nowrap;
+                        overflow: hidden;
+                        text-overflow: ellipsis;
+                    }
+
+                    .in-flight-indicator {
+                        font-style: italic;
+                        color: #6c757d;
+                    }
+                </style>
             }
             else // list view
             {
@@ -170,7 +446,7 @@
                                         }
                                     </td>
                                     <td>
-                                        @if (assignment.IsComplete())
+                                        @if (assignment.IsComplete)
                                         {
                                             <span class="badge bg-success">Complete</span>
                                         }
@@ -190,6 +466,13 @@
                     </table>
                 </div>
             }
+        }
+        
+        @if (!string.IsNullOrEmpty(model.ErrorMessage))
+        {
+            <div class="alert alert-danger mt-3">
+                <strong>Error:</strong> @model.ErrorMessage
+            </div>
         }
     </div>
 </div>
@@ -293,11 +576,22 @@
     <div class="modal-backdrop fade show"></div>
 }
 
+<style>
+    .crew-list {
+        max-height: 150px;
+        overflow-y: auto;
+    }
+
+    .crew-member {
+        white-space: nowrap;
+        margin-bottom: 2px;
+    }
+</style>
+
 @code {
-    private DateTime selectedDate = new DateTime(2025, 2, 17);
-    private DateTime selectedDay = new DateTime(2025, 2, 17);
-    private bool isLoading = false;
-    private WeeklySchedule currentSchedule;
+    private DateTime selectedDate = DateTime.Now;
+    private DateTime selectedDay = DateTime.Now;
+    private ScheduleViewModel model = new ScheduleViewModel();
     private string viewMode = "list";
     private string filterText = "";
     private string vday = "day";
@@ -305,13 +599,10 @@
     private string vlist = "list";
     private string sortField = "departure";
     private string sortDirection = "asc";
-    private FlightAssignment selectedFlight;
-    private string formattedWeekRange => currentSchedule != null 
-        ? $"{currentSchedule.WeekStart:MMM dd} - {currentSchedule.WeekEnd.AddDays(-1):MMM dd, yyyy}" 
-        : "";
+    private FlightAssignmentViewModel? selectedFlight;
     
-    private IEnumerable<FlightAssignment> filteredAndSortedAssignments => 
-        FilterAndSortAssignments(currentSchedule?.FlightAssignments ?? new List<FlightAssignment>());
+    private IEnumerable<FlightAssignmentViewModel> filteredAndSortedAssignments => 
+        FilterAndSortAssignments(model.FlightAssignments);
 
     protected override async Task OnInitializedAsync()
     {
@@ -330,24 +621,21 @@
 
     private async Task LoadSchedule()
     {
-        try
+        // Load the schedule for the selected week using the controller
+        model = await ScheduleController.GetScheduleForWeekAsync(selectedDate);
+        
+        // If schedule loaded successfully, set selected day to first day with flights
+        if (model.FlightAssignments.Any())
         {
-            isLoading = true;
-            
-            // Adjust to Monday of the selected week
-            AdjustSelectedDateToMonday();
-            selectedDay = selectedDate;
-            
-            // Load the schedule for the selected week
-            currentSchedule = await SchedulingService.GetScheduleForWeekAsync(selectedDate);
-        }
-        catch (Exception)
-        {
-            // Handle error
-        }
-        finally
-        {
-            isLoading = false;
+            var firstFlightDay = model.FlightAssignments.OrderBy(fa => fa.Flight.DepartureTime).First().Flight.DepartureTime.Date;
+            if (firstFlightDay >= model.WeekStart && firstFlightDay < model.WeekEnd)
+            {
+                selectedDay = firstFlightDay;
+            }
+            else
+            {
+                selectedDay = model.WeekStart;
+            }
         }
     }
     
@@ -360,7 +648,7 @@
     
     private void CurrentWeek()
     {
-        selectedDate = new DateTime(2025, 2, 17);
+        selectedDate = DateTime.Now;
         AdjustSelectedDateToMonday();
         selectedDay = selectedDate;
         LoadSchedule();
@@ -375,10 +663,10 @@
     
     private void SelectDay(int dayIndex)
     {
-        selectedDay = currentSchedule.WeekStart.AddDays(dayIndex);
+        selectedDay = model.WeekStart.AddDays(dayIndex);
     }
     
-    private void ShowFlightDetails(FlightAssignment flight)
+    private void ShowFlightDetails(FlightAssignmentViewModel flight)
     {
         selectedFlight = flight;
     }
@@ -403,7 +691,7 @@
         }
     }
     
-    private IEnumerable<FlightAssignment> FilterAndSortAssignments(IEnumerable<FlightAssignment> assignments)
+    private IEnumerable<FlightAssignmentViewModel> FilterAndSortAssignments(IEnumerable<FlightAssignmentViewModel> assignments)
     {
         // Filter
         if (!string.IsNullOrWhiteSpace(filterText))

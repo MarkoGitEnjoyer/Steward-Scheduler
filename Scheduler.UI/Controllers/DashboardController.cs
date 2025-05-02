@@ -1,0 +1,105 @@
+﻿using Scheduler.Core.Models;
+using Scheduler.Core.Services;
+using Scheduler.UI.Models;
+
+namespace Scheduler.UI.Controllers
+{
+    public class DashboardController
+    {
+        private readonly ISchedulingService _schedulingService;
+
+        public DashboardController(ISchedulingService schedulingService)
+        {
+            _schedulingService = schedulingService;
+        }
+
+        public async Task<DashboardViewModel> GetDashboardDataAsync()
+        {
+            var viewModel = new DashboardViewModel { IsLoading = true };
+
+            try
+            {
+                // Get current week's start date (Monday)
+                var today = DateTime.Now;
+                var currentWeekStart = today.AddDays(-(int)today.DayOfWeek + 1);
+                if (currentWeekStart.DayOfWeek == DayOfWeek.Sunday) currentWeekStart = currentWeekStart.AddDays(1);
+
+                viewModel.CurrentWeekDisplay = $"{currentWeekStart:MMM dd} - {currentWeekStart.AddDays(6):MMM dd, yyyy}";
+
+                // Load current schedule
+                var currentSchedule = await _schedulingService.GetScheduleForWeekAsync(currentWeekStart);
+
+                if (currentSchedule != null)
+                {
+                    // Calculate dashboard metrics
+                    viewModel.CurrentWeekFlights = currentSchedule.FlightAssignments.Count;
+                    viewModel.AssignedFlights = currentSchedule.FlightAssignments.Count(fa => fa.IsComplete());
+
+                    var allStewardIds = new HashSet<int>();
+                    foreach (var fa in currentSchedule.FlightAssignments)
+                    {
+                        foreach (var steward in fa.BusinessStewards)
+                            allStewardIds.Add(steward.StewardId);
+
+                        foreach (var steward in fa.EconomyStewards)
+                            allStewardIds.Add(steward.StewardId);
+                    }
+
+                    viewModel.ActiveStewards = allStewardIds.Count;
+
+                    // Calculate completion percentage
+                    viewModel.ScheduleCompletionPercentage = viewModel.CurrentWeekFlights > 0
+                        ? (int)Math.Round((double)viewModel.AssignedFlights / viewModel.CurrentWeekFlights * 100)
+                        : 0;
+
+                    // Use the fitness score as quality percentage
+                    viewModel.ScheduleQualityPercentage = (int)Math.Round(currentSchedule.FitnessScore * 100);
+
+                    // Get upcoming flights (next 24 hours)
+                    var nextDay = today.AddDays(1);
+                    viewModel.UpcomingFlights = currentSchedule.FlightAssignments
+                        .Where(fa => fa.Flight.DepartureTime >= today && fa.Flight.DepartureTime <= nextDay)
+                        .Select(fa => MapFlightToViewModel(fa.Flight, IsFlightFullyAssigned(fa)))
+                        .OrderBy(f => f.DepartureTime)
+                        .ToList();
+                }
+
+                viewModel.LastUpdated = DateTime.Now;
+            }
+            catch (Exception ex)
+            {
+                viewModel.ErrorMessage = $"Error loading dashboard: {ex.Message}";
+            }
+            finally
+            {
+                viewModel.IsLoading = false;
+            }
+
+            return viewModel;
+        }
+
+        private FlightViewModel MapFlightToViewModel(FlightDto flight, bool isFullyAssigned)
+        {
+            return new FlightViewModel
+            {
+                FlightId = flight.FlightId,
+                FlightNumber = flight.FlightNumber,
+                DepartureTime = flight.DepartureTime,
+                ArrivalTime = flight.ArrivalTime,
+                AircraftType = flight.AircraftType,
+                Destination = flight.Destination,
+                RequiredLanguageId = flight.RequiredLanguageId,
+                FlightTime = flight.FlightTime,
+                Priority = flight.Priority,
+                RequiredBusinessCrew = flight.RequiredBusinessCrew,
+                RequiredEconomyCrew = flight.RequiredEconomyCrew,
+                IsFullyAssigned = isFullyAssigned
+            };
+        }
+
+        private bool IsFlightFullyAssigned(FlightAssignment assignment)
+        {
+            return assignment.IsComplete();
+        }
+    }
+}
