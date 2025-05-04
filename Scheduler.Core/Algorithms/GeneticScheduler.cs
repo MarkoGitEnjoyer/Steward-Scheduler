@@ -247,9 +247,6 @@ namespace Scheduler.Core.Algorithms
                 }
             }
 
-            // If we lost schedules due to validation, replace them
-            ReplaceInvalidSchedules(newPopulation, stewards);
-
             return newPopulation;
         }
 
@@ -360,17 +357,6 @@ namespace Scheduler.Core.Algorithms
             return child;
         }
 
-        private void ReplaceInvalidSchedules(List<WeeklySchedule> newPopulation, List<StewardDto> stewards)
-        {
-            // If we lost schedules due to validation, replace them
-            while (newPopulation.Count < _config.PopulationSize)
-            {
-                // Clone a valid schedule
-                var replacement = newPopulation[_random.Next(newPopulation.Count)].Clone();
-                replacement.FitnessScore = FitnessCalculator.CalculateScheduleFitness(replacement, stewards);
-                newPopulation.Add(replacement);
-            }
-        }
 
         private void LogGenerationProgress(int generation, bool improved, List<WeeklySchedule> population, float averageFitness)
         {
