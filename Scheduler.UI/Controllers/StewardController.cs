@@ -52,8 +52,8 @@ namespace Scheduler.UI.Controllers
                             IsSenior = steward.IsSenior,
                             JoiningDate = steward.JoiningDate,
                             MonthlyHours = await _unitOfWork.Stewards.GetMonthlyHoursAsync(
-                                steward.StewardId, DateTime.Now.Year, DateTime.Now.Month),
-                            ExperienceYears = (float)(DateTime.Now - steward.JoiningDate).TotalDays / 365
+                                steward.StewardId, 2025, 2),
+                            ExperienceYears = (float)(new DateTime(2025, 2, 17) - steward.JoiningDate).TotalDays / 365
                         };
 
                         // Get steward's languages names for display

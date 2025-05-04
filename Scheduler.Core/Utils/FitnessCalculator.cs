@@ -15,38 +15,42 @@ namespace Scheduler.Core.Utils
             if (schedule.FlightAssignments.Count == 0)
                 return 0;
 
-            // Track total flights that should be scheduled this week
-            int totalPossibleFlights = schedule.TotalFlightCount > 0 ? schedule.TotalFlightCount : schedule.FlightAssignments.Count;
-
-            // --- MODIFICATION START ---
-            // Calculate the number of *fully completed* flight assignments.
-            int fullyAssignedFlights = schedule.FlightAssignments.Count(fa => fa.IsComplete()); // Use the IsComplete method from FlightAssignment
-
-            // Calculate coverage rate based on *completed* assignments.
-            float flightCoverageRate = (float)fullyAssignedFlights / totalPossibleFlights;
-            // --- MODIFICATION END ---
-
-            // Calculate completion rate of scheduled flights
-            float completionRate = schedule.FlightAssignments.Count(fa => fa.IsComplete()) /
-                                  (float)Math.Max(1, schedule.FlightAssignments.Count);
-
-            // Calculate workload balance across all stewards
+            // Get the fitness components
+            float flightCoverageRate = CalculateFlightCoverageRate(schedule);
+            float completionRate = CalculateCompletionRate(schedule);
             float workloadBalance = CalculateWorkloadBalance(schedule, allStewards);
-
-            // Calculate language match rate for all flights
             float languageMatchRate = CalculateLanguageMatchRate(schedule);
-
-            // Calculate steward quality match for flights (based on flight priority and steward quality)
             float qualityMatchRate = CalculateQualityMatchRate(schedule);
 
-            // Inside FitnessCalculator.CalculateScheduleFitness
+            // Weighted combination of fitness components
             float fitnessScore = 0.62f * flightCoverageRate +       // Increased weight for coverage
-                                   0.08f * completionRate +             // Reduced weight
-                                   0.1f * workloadBalance +            // Reduced weight
-                                   0.1f * languageMatchRate +          // Reduced weight
-                                   0.1f * qualityMatchRate;           // Reduced weight
+                               0.08f * completionRate +             // Reduced weight
+                               0.1f * workloadBalance +            // Reduced weight
+                               0.1f * languageMatchRate +          // Reduced weight
+                               0.1f * qualityMatchRate;           // Reduced weight
 
             return fitnessScore;
+        }
+
+        // Calculate coverage rate of flights
+        private static float CalculateFlightCoverageRate(WeeklySchedule schedule)
+        {
+            // Track total flights that should be scheduled this week
+            int totalPossibleFlights = schedule.TotalFlightCount > 0 ?
+                schedule.TotalFlightCount : schedule.FlightAssignments.Count;
+
+            // Calculate the number of *fully completed* flight assignments.
+            int fullyAssignedFlights = schedule.FlightAssignments.Count(fa => fa.IsComplete());
+
+            // Calculate coverage rate based on *completed* assignments.
+            return (float)fullyAssignedFlights / totalPossibleFlights;
+        }
+
+        // Calculate completion rate of scheduled flights
+        private static float CalculateCompletionRate(WeeklySchedule schedule)
+        {
+            return schedule.FlightAssignments.Count(fa => fa.IsComplete()) /
+                  (float)Math.Max(1, schedule.FlightAssignments.Count);
         }
 
         // Calculate how evenly the work is distributed
@@ -56,7 +60,20 @@ namespace Scheduler.Core.Utils
                 return 0;
 
             // Calculate hours per steward
-            Dictionary<int, float> stewardTotalHours = new Dictionary<int, float>();
+            var stewardTotalHours = InitializeStewardHours(allStewards);
+
+            // Add hours from the schedule
+            AddScheduledHoursToTotals(schedule, stewardTotalHours);
+
+            // Calculate standard deviation of hours for active stewards
+            float balanceScore = CalculateHoursBalanceScore(schedule, stewardTotalHours);
+
+            return balanceScore;
+        }
+
+        private static Dictionary<int, float> InitializeStewardHours(List<StewardDto> allStewards)
+        {
+            var stewardTotalHours = new Dictionary<int, float>();
 
             // Initialize with current monthly hours
             foreach (var steward in allStewards)
@@ -64,7 +81,13 @@ namespace Scheduler.Core.Utils
                 stewardTotalHours[steward.StewardId] = steward.MonthlyHours;
             }
 
-            // Add hours from the schedule
+            return stewardTotalHours;
+        }
+
+        private static void AddScheduledHoursToTotals(
+            WeeklySchedule schedule,
+            Dictionary<int, float> stewardTotalHours)
+        {
             foreach (var kvp in schedule.StewardHours)
             {
                 int stewardId = kvp.Key;
@@ -75,7 +98,12 @@ namespace Scheduler.Core.Utils
                     stewardTotalHours[stewardId] += scheduledHours;
                 }
             }
+        }
 
+        private static float CalculateHoursBalanceScore(
+            WeeklySchedule schedule,
+            Dictionary<int, float> stewardTotalHours)
+        {
             // Only consider stewards who are actually assigned to flights
             var activeHours = stewardTotalHours
                 .Where(kv => schedule.StewardHours.ContainsKey(kv.Key) && schedule.StewardHours[kv.Key] > 0)
@@ -92,9 +120,7 @@ namespace Scheduler.Core.Utils
 
             // Convert to a 0-1 score (lower std dev is better)
             float maxStdDev = 20.0f;
-            float balance = Math.Max(0, 1 - (stdDev / maxStdDev));
-
-            return balance;
+            return Math.Max(0, 1 - (stdDev / maxStdDev));
         }
 
         // Calculate how well language requirements are met
@@ -110,10 +136,7 @@ namespace Scheduler.Core.Utils
                     totalFlightsWithLanguageReq++;
 
                     // Check if any assigned steward speaks the required language
-                    bool hasLanguageMatch = assignment.BusinessStewards.Any(s =>
-                        s.LanguageIds.Contains(assignment.Flight.RequiredLanguageId.Value)) ||
-                        assignment.EconomyStewards.Any(s =>
-                        s.LanguageIds.Contains(assignment.Flight.RequiredLanguageId.Value));
+                    bool hasLanguageMatch = HasStewardWithRequiredLanguage(assignment);
 
                     if (hasLanguageMatch)
                         matchCount++;
@@ -121,6 +144,14 @@ namespace Scheduler.Core.Utils
             }
 
             return totalFlightsWithLanguageReq == 0 ? 1.0f : (float)matchCount / totalFlightsWithLanguageReq;
+        }
+
+        private static bool HasStewardWithRequiredLanguage(FlightAssignment assignment)
+        {
+            int requiredLanguageId = assignment.Flight.RequiredLanguageId.Value;
+
+            return assignment.BusinessStewards.Any(s => s.LanguageIds.Contains(requiredLanguageId)) ||
+                   assignment.EconomyStewards.Any(s => s.LanguageIds.Contains(requiredLanguageId));
         }
 
         // Calculate how well steward quality matches flight priority
@@ -134,47 +165,56 @@ namespace Scheduler.Core.Utils
 
             foreach (var assignment in schedule.FlightAssignments)
             {
-                float flightImportance = Math.Min(1.0f, assignment.Flight.Priority / 5.0f); // Normalize to 0-1 for 1-5 scale
-                float stewardQuality = 0;
-
-                var allAssignedStewards = new List<StewardDto>();
-                allAssignedStewards.AddRange(assignment.BusinessStewards);
-                allAssignedStewards.AddRange(assignment.EconomyStewards);
-
-                if (allAssignedStewards.Count > 0)
-                {
-                    // Calculate average quality score for assigned stewards
-                    float avgExperience = allAssignedStewards.Average(s => Math.Min(1.0f, s.ExperienceYears / 10.0f)); // Normalize to 0-1
-                    float avgFeedback = allAssignedStewards.Average(s =>
-                        Math.Min(1.0f, Math.Max(0, s.FeedbackScore / 5.0f))); // Normalize to 0-1
-
-                    stewardQuality = (avgExperience + avgFeedback) / 2.0f;
-                }
-
-                // Higher score if high-quality stewards are assigned to high-priority flights
-                float matchScore;
-
-                // If flight is high priority, we want high quality stewards
-                if (flightImportance > 0.7f)
-                {
-                    // For high priority flights, we want quality >= importance
-                    matchScore = stewardQuality >= flightImportance ? 1.0f : stewardQuality / flightImportance;
-                }
-                else if (flightImportance <= 0.3f)
-                {
-                    // For low priority flights, we don't need high quality stewards
-                    matchScore = 1.0f - Math.Max(0, stewardQuality - (flightImportance + 0.2f));
-                }
-                else
-                {
-                    // For medium priority flights, we want a close match
-                    matchScore = 1.0f - Math.Abs(flightImportance - stewardQuality);
-                }
-
+                float matchScore = CalculateFlightQualityMatch(assignment);
                 totalScore += matchScore;
             }
 
             return totalScore / flightCount;
+        }
+
+        private static float CalculateFlightQualityMatch(FlightAssignment assignment)
+        {
+            float flightImportance = Math.Min(1.0f, assignment.Flight.Priority / 5.0f); // Normalize to 0-1 for 1-5 scale
+            float stewardQuality = CalculateAverageStewardQuality(assignment);
+
+            // Higher score if high-quality stewards are assigned to high-priority flights
+            float matchScore;
+
+            // If flight is high priority, we want high quality stewards
+            if (flightImportance > 0.7f)
+            {
+                // For high priority flights, we want quality >= importance
+                matchScore = stewardQuality >= flightImportance ? 1.0f : stewardQuality / flightImportance;
+            }
+            else if (flightImportance <= 0.3f)
+            {
+                // For low priority flights, we don't need high quality stewards
+                matchScore = 1.0f - Math.Max(0, stewardQuality - (flightImportance + 0.2f));
+            }
+            else
+            {
+                // For medium priority flights, we want a close match
+                matchScore = 1.0f - Math.Abs(flightImportance - stewardQuality);
+            }
+
+            return matchScore;
+        }
+
+        private static float CalculateAverageStewardQuality(FlightAssignment assignment)
+        {
+            var allAssignedStewards = new List<StewardDto>();
+            allAssignedStewards.AddRange(assignment.BusinessStewards);
+            allAssignedStewards.AddRange(assignment.EconomyStewards);
+
+            if (allAssignedStewards.Count == 0)
+                return 0;
+
+            // Calculate average quality score for assigned stewards
+            float avgExperience = allAssignedStewards.Average(s => Math.Min(1.0f, s.ExperienceYears / 10.0f)); // Normalize to 0-1
+            float avgFeedback = allAssignedStewards.Average(s =>
+                Math.Min(1.0f, Math.Max(0, s.FeedbackScore / 5.0f))); // Normalize to 0-1
+
+            return (avgExperience + avgFeedback) / 2.0f;
         }
 
         // Calculate a steward's suitability score for a specific flight
@@ -184,15 +224,25 @@ namespace Scheduler.Core.Utils
                 return 0;
 
             // Check hard constraints first - if any is violated, return 0
-            // Check if steward has license for the aircraft
-            if (!steward.HasLicenseForAircraft(flight.AircraftType))
-                return 0;
-
-            // Check if steward is available during flight time (considering rest periods)
-            if (!steward.IsAvailable(flight.DepartureTime, flight.FlightTime))
+            if (!steward.HasLicenseForAircraft(flight.AircraftType) ||
+                !steward.IsAvailable(flight.DepartureTime, flight.FlightTime))
                 return 0;
 
             // Calculate soft constraint scores
+            var scores = CalculateStewardScoreComponents(steward, flight, averageMonthlyHours);
+
+            // Calculate weighted score - ensure it stays within 0-1 range
+            float totalScore = weights.ExperienceWeight * scores.ExperienceScore +
+                             weights.FeedbackWeight * scores.FeedbackScore +
+                             weights.WorkloadBalanceWeight * scores.WorkloadScore +
+                             weights.LanguageWeight * scores.LanguageScore;
+
+            return Math.Min(1.0f, totalScore);
+        }
+
+        private static (float ExperienceScore, float FeedbackScore, float WorkloadScore, float LanguageScore)
+            CalculateStewardScoreComponents(StewardDto steward, FlightDto flight, float averageMonthlyHours)
+        {
             // Experience score (0-1): More experienced stewards score higher
             float experienceScore = Math.Min(1.0f, steward.ExperienceYears / 10.0f);
 
@@ -213,13 +263,7 @@ namespace Scheduler.Core.Utils
                 languageScore = 1.0f;
             }
 
-            // Calculate weighted score - ensure it stays within 0-1 range
-            float totalScore = weights.ExperienceWeight * experienceScore +
-                             weights.FeedbackWeight * feedbackScore +
-                             weights.WorkloadBalanceWeight * workloadScore +
-                             weights.LanguageWeight * languageScore;
-
-            return Math.Min(1.0f, totalScore);
+            return (experienceScore, feedbackScore, workloadScore, languageScore);
         }
     }
 }

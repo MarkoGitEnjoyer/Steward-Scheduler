@@ -24,9 +24,7 @@ namespace Scheduler.Core.Services
         public async Task<WeeklySchedule> GenerateWeeklyScheduleAsync(DateTime weekStart)
         {
             // Normalize to the start of the week (Monday)
-            weekStart = weekStart.Date.AddDays(-(int)weekStart.DayOfWeek + 1);
-            if (weekStart.DayOfWeek == DayOfWeek.Sunday) weekStart = weekStart.AddDays(1);
-
+            weekStart = NormalizeToWeekStart(weekStart);
             var weekEnd = weekStart.AddDays(7);
 
             // Get all flights for the week
@@ -38,23 +36,11 @@ namespace Scheduler.Core.Services
 
             Console.WriteLine($"Generating schedule with {stewards.Count} stewards and {flights.Count} flights.");
 
-            // Sort flights by priority for better initial scheduling
-            var sortedFlights = flights.OrderByDescending(f => f.Priority).ToList();
+            // Generate initial schedule using priority-based scheduler
+            var initialSchedule = GenerateInitialSchedule(flights, stewards, weekStart);
 
-            // Run the priority-based scheduler first
-            var priorityScheduler = new PriorityBasedScheduler();
-            var initialSchedule = priorityScheduler.GenerateSchedule(
-                sortedFlights,
-                stewards,
-                weekStart,
-                new SchedulingWeights());
-
-            // Verify hour constraints in initial schedule
-            if (!initialSchedule.VerifyHourConstraints(stewards))
-            {
-                Console.WriteLine("WARNING: Initial schedule violates 90-hour constraint!");
-                RemoveFlightsFromOverworkedStewards(initialSchedule, stewards);
-            }
+            // Verify and fix hour constraints
+            EnsureScheduleHourConstraints(initialSchedule, stewards);
 
             // Report on initial schedule
             var initialFlightCount = initialSchedule.FlightAssignments.Count;
@@ -63,6 +49,58 @@ namespace Scheduler.Core.Services
             // Set the total flight count for genetic algorithm to use
             initialSchedule.TotalFlightCount = totalFlights;
 
+            // Optimize the schedule using genetic algorithm
+            var optimizedSchedule = OptimizeSchedule(flights, stewards, weekStart, initialSchedule, totalFlights);
+
+            // Report final stats
+            ReportScheduleStats(initialFlightCount, optimizedSchedule);
+
+            return optimizedSchedule;
+        }
+
+        private DateTime NormalizeToWeekStart(DateTime date)
+        {
+            // Normalize to the start of the week (Monday)
+            date = date.Date.AddDays(-(int)date.DayOfWeek + 1);
+            if (date.DayOfWeek == DayOfWeek.Sunday)
+                date = date.AddDays(1);
+
+            return date;
+        }
+
+        private WeeklySchedule GenerateInitialSchedule(
+            List<FlightDto> flights,
+            List<StewardDto> stewards,
+            DateTime weekStart)
+        {
+            // Sort flights by priority for better initial scheduling
+            var sortedFlights = flights.OrderByDescending(f => f.Priority).ToList();
+
+            // Run the priority-based scheduler first
+            var priorityScheduler = new PriorityBasedScheduler();
+            return priorityScheduler.GenerateSchedule(
+                sortedFlights,
+                stewards,
+                weekStart,
+                new SchedulingWeights());
+        }
+
+        private void EnsureScheduleHourConstraints(WeeklySchedule schedule, List<StewardDto> stewards)
+        {
+            // Verify hour constraints in initial schedule
+            if (!schedule.VerifyHourConstraints(stewards))
+            {
+                Console.WriteLine("WARNING: Initial schedule violates 90-hour constraint!");
+            }
+        }
+
+        private WeeklySchedule OptimizeSchedule(
+            List<FlightDto> flights,
+            List<StewardDto> stewards,
+            DateTime weekStart,
+            WeeklySchedule initialSchedule,
+            int totalFlights)
+        {
             // Run the genetic scheduler to refine the schedule
             var geneticConfig = new GeneticAlgorithmConfig();
 
@@ -78,282 +116,241 @@ namespace Scheduler.Core.Services
                 return initialSchedule;
             }
 
-            // Report final stats
-            Console.WriteLine($"Initial schedule: {initialFlightCount} flights");
-            Console.WriteLine($"Final schedule: {schedule.FlightAssignments.Count} flights");
-            Console.WriteLine($"Improvement: {schedule.FlightAssignments.Count - initialFlightCount} additional flights scheduled");
-
             return schedule;
         }
 
-        // Helper method to fix overworked stewards
-        private void RemoveFlightsFromOverworkedStewards(WeeklySchedule schedule, List<StewardDto> stewards)
+        private void ReportScheduleStats(int initialFlightCount, WeeklySchedule finalSchedule)
         {
-            // Create a steward ID to steward mapping for easy lookup
-            var stewardMap = stewards.ToDictionary(s => s.StewardId);
-
-            // Get all stewards who have more than 90 hours
-            var overworkedStewardIds = schedule.StewardHours
-                .Where(kv => {
-                    var steward = stewardMap.GetValueOrDefault(kv.Key);
-                    return steward != null && steward.MonthlyHours + kv.Value > 90;
-                })
-                .Select(kv => kv.Key)
-                .ToList();
-
-            foreach (var stewardId in overworkedStewardIds)
-            {
-                var steward = stewardMap.GetValueOrDefault(stewardId);
-                if (steward == null) continue;
-
-                float totalHours = steward.MonthlyHours + schedule.GetStewardScheduledHours(stewardId);
-                Console.WriteLine($"Fixing overworked steward {stewardId}: Base={steward.MonthlyHours}h, Added={schedule.GetStewardScheduledHours(stewardId)}h, Total={totalHours}h");
-
-                // Get flights assigned to this steward
-                if (!schedule.StewardSchedules.ContainsKey(stewardId)) continue;
-
-                var assignments = schedule.StewardSchedules[stewardId].ToList();
-
-                // Sort by priority (ascending)
-                assignments = assignments.OrderBy(a => a.Priority).ToList();
-
-                // Start removing lowest priority flights until hours are under 90
-                float hoursToRemove = totalHours - 90;
-                Console.WriteLine($"Need to remove {hoursToRemove} hours from steward {stewardId}");
-
-                while (hoursToRemove > 0 && assignments.Any())
-                {
-                    var flight = assignments.First();
-                    assignments.RemoveAt(0);
-
-                    // Find the assignment for this flight
-                    var flightAssignment = schedule.FlightAssignments
-                        .FirstOrDefault(fa => fa.Flight.FlightId == flight.FlightId);
-
-                    if (flightAssignment == null) continue;
-
-                    // Remove the steward from this flight
-                    schedule.RemoveStewardFromFlight(steward, flightAssignment);
-
-                    // Update hours to remove
-                    hoursToRemove -= flight.FlightTime;
-
-                    Console.WriteLine($"Removed steward {stewardId} from flight {flight.FlightId} ({flight.FlightTime}h, Priority {flight.Priority})");
-
-                    // If there aren't enough crew members left, remove the flight entirely
-                    bool hasMinCrew = flightAssignment.BusinessStewards.Any(s => s.IsSenior) &&
-                                     flightAssignment.EconomyStewards.Any();
-
-                    if (!hasMinCrew)
-                    {
-                        // Remove this flight completely
-                        schedule.FlightAssignments.Remove(flightAssignment);
-                        Console.WriteLine($"Removed flight {flight.FlightId} due to insufficient crew");
-
-                        // Remove from all stewards' schedules
-                        foreach (var s in stewards)
-                        {
-                            if (schedule.StewardSchedules.ContainsKey(s.StewardId))
-                            {
-                                if (schedule.StewardSchedules[s.StewardId].Contains(flight))
-                                {
-                                    schedule.StewardSchedules[s.StewardId].Remove(flight);
-                                    schedule.RemoveStewardHours(s.StewardId, flight.FlightTime);
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Recalculate hours
-                float newTotalHours = steward.MonthlyHours + schedule.GetStewardScheduledHours(stewardId);
-                Console.WriteLine($"After fixing: Steward {stewardId} now has {newTotalHours}h total");
-            }
+            Console.WriteLine($"Initial schedule: {initialFlightCount} flights");
+            Console.WriteLine($"Final schedule: {finalSchedule.FlightAssignments.Count} flights");
+            Console.WriteLine($"Improvement: {finalSchedule.FlightAssignments.Count - initialFlightCount} additional flights scheduled");
         }
+
+        
+
 
         // Save a generated schedule to the database
         public async Task<bool> SaveScheduleAsync(WeeklySchedule schedule)
         {
             try
             {
-                // STEP 1: Get the month for this scheduling period
+                // Get the month for this scheduling period
                 int scheduleMonth = schedule.WeekStart.Month;
                 int scheduleYear = schedule.WeekStart.Year;
 
                 Console.WriteLine($"Validating schedule for month: {scheduleYear}-{scheduleMonth}");
                 Console.WriteLine($"Schedule contains {schedule.FlightAssignments.Count} flight assignments");
 
-                // STEP 2: Create a dictionary to track additional hours for each steward
-                var additionalHours = new Dictionary<int, float>();
+                // Track additional hours for each steward
+                var additionalHours = CalculateAdditionalHours(schedule, scheduleMonth, scheduleYear);
 
-                // STEP 3: Calculate total additional hours for each steward
-                foreach (var flightAssignment in schedule.FlightAssignments)
+                // Verify no steward exceeds 90 hours
+                if (!await VerifyStewardHourLimits(additionalHours, scheduleYear, scheduleMonth))
                 {
-                    // Skip flights from different months (shouldn't happen with simplified approach)
-                    if (flightAssignment.Flight.DepartureTime.Month != scheduleMonth ||
-                        flightAssignment.Flight.DepartureTime.Year != scheduleYear)
-                    {
-                        Console.WriteLine($"WARNING: Flight {flightAssignment.Flight.FlightId} is in month {flightAssignment.Flight.DepartureTime.Month}, but schedule is for month {scheduleMonth}");
-                        continue;
-                    }
-
-                    float flightTime = flightAssignment.Flight.FlightTime;
-
-                    // Log flight information
-                    Console.WriteLine($"Processing flight {flightAssignment.Flight.FlightId}: {flightAssignment.Flight.FlightTime}h");
-
-                    // Add hours for all stewards assigned to this flight
-                    foreach (var steward in flightAssignment.BusinessStewards.Concat(flightAssignment.EconomyStewards))
-                    {
-                        if (!additionalHours.ContainsKey(steward.StewardId))
-                        {
-                            additionalHours[steward.StewardId] = 0;
-                        }
-
-                        additionalHours[steward.StewardId] += flightTime;
-                    }
-
-                    // Log assignment counts
-                    Console.WriteLine($"  - Business: {flightAssignment.BusinessStewards.Count}, Economy: {flightAssignment.EconomyStewards.Count}");
+                    return false;
                 }
 
-                // STEP 4: Verify no steward exceeds 90 hours
-                Console.WriteLine("Checking individual steward hours against database records...");
+                // Clear existing assignments and create new ones
+                await ClearAndCreateNewAssignments(schedule);
 
-                // Sort stewards by ID for easier reading
-                var sortedStewardIds = additionalHours.Keys.OrderBy(id => id).ToList();
-
-                foreach (var stewardId in sortedStewardIds)
-                {
-                    float newHours = additionalHours[stewardId];
-
-                    // Get current hours from database
-                    float currentHours = await _unitOfWork.Stewards.GetMonthlyHoursAsync(
-                        stewardId, scheduleYear, scheduleMonth);
-
-                    float totalHours = currentHours + newHours;
-
-                    Console.WriteLine($"Steward {stewardId}: Current {currentHours}h + New {newHours}h = Total {totalHours}h");
-
-                    // Check if this exceeds 90 hours
-                    if (totalHours > 90)
-                    {
-                        Console.WriteLine($"ERROR: Steward {stewardId} would exceed 90-hour monthly limit with {totalHours} hours. Schedule not saved.");
-                        return false; // Don't save this invalid schedule
-                    }
-                }
-
-                Console.WriteLine("All stewards' hours verified - no violations of 90-hour limit!");
-
-                // STEP 5: Clear any existing assignments for the flights in this schedule
-                var flightIds = schedule.FlightAssignments.Select(fa => fa.Flight.FlightId).ToList();
-                Console.WriteLine($"Clearing {flightIds.Count} existing flight assignments...");
-                var existingAssignments = await _unitOfWork.Assignments.FindAsync(a => flightIds.Contains(a.FlightId));
-
-                Console.WriteLine($"Found {existingAssignments.Count()} existing assignments to remove");
-                foreach (var assignment in existingAssignments)
-                {
-                    await _unitOfWork.Assignments.RemoveAsync(assignment);
-                }
-
-                // STEP 6: Create new assignments
-                Console.WriteLine("Creating new assignments...");
-                int assignmentCount = 0;
-
-                foreach (var flightAssignment in schedule.FlightAssignments)
-                {
-                    var month = flightAssignment.Flight.DepartureTime.Month;
-                    var year = flightAssignment.Flight.DepartureTime.Year;
-
-                    // Add business stewards
-                    foreach (var steward in flightAssignment.BusinessStewards)
-                    {
-                        try
-                        {
-                            var assignment = new Assignment
-                            {
-                                StewardId = steward.StewardId,
-                                FlightId = flightAssignment.Flight.FlightId
-                            };
-
-                            await _unitOfWork.Assignments.AddAsync(assignment);
-                            assignmentCount++;
-
-                            // Update the steward's monthly hours
-                            await _unitOfWork.Stewards.UpdateMonthlyHoursAsync(
-                                steward.StewardId,
-                                year,
-                                month,
-                                flightAssignment.Flight.FlightTime);
-
-                            // Update last flight end time
-                            await _unitOfWork.Stewards.UpdateLastFlightTimeAsync(
-                                steward.StewardId,
-                                flightAssignment.Flight.ArrivalTime);
-                        }
-                        catch (Exception ex)
-                        {
-                            Console.WriteLine($"Error creating assignment for business steward {steward.StewardId} on flight {flightAssignment.Flight.FlightId}: {ex.Message}");
-                            throw; // Re-throw to be caught by outer exception handler
-                        }
-                    }
-
-                    // Add economy stewards
-                    foreach (var steward in flightAssignment.EconomyStewards)
-                    {
-                        try
-                        {
-                            var assignment = new Assignment
-                            {
-                                StewardId = steward.StewardId,
-                                FlightId = flightAssignment.Flight.FlightId
-                            };
-
-                            await _unitOfWork.Assignments.AddAsync(assignment);
-                            assignmentCount++;
-
-                            // Update the steward's monthly hours
-                            await _unitOfWork.Stewards.UpdateMonthlyHoursAsync(
-                                steward.StewardId,
-                                year,
-                                month,
-                                flightAssignment.Flight.FlightTime);
-
-                            // Update last flight end time
-                            await _unitOfWork.Stewards.UpdateLastFlightTimeAsync(
-                                steward.StewardId,
-                                flightAssignment.Flight.ArrivalTime);
-                        }
-                        catch (Exception ex)
-                        {
-                            Console.WriteLine($"Error creating assignment for economy steward {steward.StewardId} on flight {flightAssignment.Flight.FlightId}: {ex.Message}");
-                            throw; // Re-throw to be caught by outer exception handler
-                        }
-                    }
-                }
-
-                Console.WriteLine($"Created {assignmentCount} new assignments");
-
-                // STEP 7: Save changes
-                Console.WriteLine("Saving changes to database...");
+                // Save all changes
                 int changes = await _unitOfWork.CompleteAsync();
-
                 Console.WriteLine($"Successfully saved {changes} changes to database.");
                 return true;
             }
             catch (Exception ex)
             {
-                // Log the exception with full details
-                Console.WriteLine($"ERROR saving schedule: {ex.Message}");
-                Console.WriteLine($"Exception type: {ex.GetType().Name}");
-                Console.WriteLine($"Stack trace: {ex.StackTrace}");
+                // Log the exception
+                LogException(ex);
+                return false;
+            }
+        }
 
-                if (ex.InnerException != null)
+        private Dictionary<int, float> CalculateAdditionalHours(
+            WeeklySchedule schedule,
+            int scheduleMonth,
+            int scheduleYear)
+        {
+            var additionalHours = new Dictionary<int, float>();
+
+            foreach (var flightAssignment in schedule.FlightAssignments)
+            {
+                // Skip flights from different months
+                if (flightAssignment.Flight.DepartureTime.Month != scheduleMonth ||
+                    flightAssignment.Flight.DepartureTime.Year != scheduleYear)
                 {
-                    Console.WriteLine($"Inner exception: {ex.InnerException.Message}");
+                    Console.WriteLine($"WARNING: Flight {flightAssignment.Flight.FlightId} is in month " +
+                                    $"{flightAssignment.Flight.DepartureTime.Month}, but schedule is for month {scheduleMonth}");
+                    continue;
                 }
 
-                return false;
+                // Track flight hours for assigned stewards
+                TrackFlightHoursForStewards(flightAssignment, additionalHours);
+            }
+
+            return additionalHours;
+        }
+
+        private void TrackFlightHoursForStewards(
+            FlightAssignment flightAssignment,
+            Dictionary<int, float> additionalHours)
+        {
+            float flightTime = flightAssignment.Flight.FlightTime;
+
+            // Log flight information
+            Console.WriteLine($"Processing flight {flightAssignment.Flight.FlightId}: {flightAssignment.Flight.FlightTime}h");
+
+            // Add hours for all assigned stewards
+            foreach (var steward in flightAssignment.BusinessStewards.Concat(flightAssignment.EconomyStewards))
+            {
+                if (!additionalHours.ContainsKey(steward.StewardId))
+                {
+                    additionalHours[steward.StewardId] = 0;
+                }
+
+                additionalHours[steward.StewardId] += flightTime;
+            }
+
+            // Log assignment counts
+            Console.WriteLine($"  - Business: {flightAssignment.BusinessStewards.Count}, " +
+                            $"Economy: {flightAssignment.EconomyStewards.Count}");
+        }
+
+        private async Task<bool> VerifyStewardHourLimits(
+            Dictionary<int, float> additionalHours,
+            int scheduleYear,
+            int scheduleMonth)
+        {
+            Console.WriteLine("Checking individual steward hours against database records...");
+
+            // Sort stewards by ID for easier reading
+            var sortedStewardIds = additionalHours.Keys.OrderBy(id => id).ToList();
+
+            foreach (var stewardId in sortedStewardIds)
+            {
+                float newHours = additionalHours[stewardId];
+
+                // Get current hours from database
+                float currentHours = await _unitOfWork.Stewards.GetMonthlyHoursAsync(
+                    stewardId, scheduleYear, scheduleMonth);
+
+                float totalHours = currentHours + newHours;
+
+                Console.WriteLine($"Steward {stewardId}: Current {currentHours}h + New {newHours}h = Total {totalHours}h");
+
+                // Check if this exceeds 90 hours
+                if (totalHours > 90)
+                {
+                    Console.WriteLine($"ERROR: Steward {stewardId} would exceed 90-hour monthly limit with {totalHours} hours. Schedule not saved.");
+                    return false; // Don't save this invalid schedule
+                }
+            }
+
+            Console.WriteLine("All stewards' hours verified - no violations of 90-hour limit!");
+            return true;
+        }
+
+        private async Task ClearAndCreateNewAssignments(WeeklySchedule schedule)
+        {
+            // Clear existing assignments
+            var flightIds = schedule.FlightAssignments.Select(fa => fa.Flight.FlightId).ToList();
+
+            Console.WriteLine($"Clearing {flightIds.Count} existing flight assignments...");
+            var existingAssignments = await _unitOfWork.Assignments.FindAsync(a => flightIds.Contains(a.FlightId));
+
+            Console.WriteLine($"Found {existingAssignments.Count()} existing assignments to remove");
+            foreach (var assignment in existingAssignments)
+            {
+                await _unitOfWork.Assignments.RemoveAsync(assignment);
+            }
+
+            // Create new assignments
+            Console.WriteLine("Creating new assignments...");
+            int assignmentCount = await CreateNewAssignments(schedule);
+
+            Console.WriteLine($"Created {assignmentCount} new assignments");
+        }
+
+        private async Task<int> CreateNewAssignments(WeeklySchedule schedule)
+        {
+            int assignmentCount = 0;
+
+            foreach (var flightAssignment in schedule.FlightAssignments)
+            {
+                var month = flightAssignment.Flight.DepartureTime.Month;
+                var year = flightAssignment.Flight.DepartureTime.Year;
+
+                // Add business stewards
+                assignmentCount += await CreateStewardAssignments(
+                    flightAssignment.BusinessStewards,
+                    flightAssignment.Flight,
+                    year,
+                    month);
+
+                // Add economy stewards
+                assignmentCount += await CreateStewardAssignments(
+                    flightAssignment.EconomyStewards,
+                    flightAssignment.Flight,
+                    year,
+                    month);
+            }
+
+            return assignmentCount;
+        }
+
+        private async Task<int> CreateStewardAssignments(
+            List<StewardDto> stewards,
+            FlightDto flight,
+            int year,
+            int month)
+        {
+            int count = 0;
+
+            foreach (var steward in stewards)
+            {
+                try
+                {
+                    var assignment = new Assignment
+                    {
+                        StewardId = steward.StewardId,
+                        FlightId = flight.FlightId
+                    };
+
+                    await _unitOfWork.Assignments.AddAsync(assignment);
+                    count++;
+
+                    // Update the steward's monthly hours
+                    await _unitOfWork.Stewards.UpdateMonthlyHoursAsync(
+                        steward.StewardId,
+                        year,
+                        month,
+                        flight.FlightTime);
+
+                    // Update last flight end time
+                    await _unitOfWork.Stewards.UpdateLastFlightTimeAsync(
+                        steward.StewardId,
+                        flight.ArrivalTime);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error creating assignment for steward {steward.StewardId} " +
+                                    $"on flight {flight.FlightId}: {ex.Message}");
+                    throw; // Re-throw to be caught by outer exception handler
+                }
+            }
+
+            return count;
+        }
+
+        private void LogException(Exception ex)
+        {
+            Console.WriteLine($"ERROR saving schedule: {ex.Message}");
+            Console.WriteLine($"Exception type: {ex.GetType().Name}");
+            Console.WriteLine($"Stack trace: {ex.StackTrace}");
+
+            if (ex.InnerException != null)
+            {
+                Console.WriteLine($"Inner exception: {ex.InnerException.Message}");
             }
         }
 
@@ -361,18 +358,12 @@ namespace Scheduler.Core.Services
         public async Task<WeeklySchedule> GetScheduleForWeekAsync(DateTime weekStart)
         {
             // Normalize to the start of the week (Monday)
-            weekStart = weekStart.Date.AddDays(-(int)weekStart.DayOfWeek + 1);
-            if (weekStart.DayOfWeek == DayOfWeek.Sunday) weekStart = weekStart.AddDays(1);
-
+            weekStart = NormalizeToWeekStart(weekStart);
             var weekEnd = weekStart.AddDays(7);
 
-            // Get all flights for the week
+            // Get all flights and stewards for the week
             var flights = await GetFlightsForWeekAsync(weekStart, weekEnd);
-
-            // Get all stewards
             var stewards = await GetAllStewardsWithDetailsAsync(weekStart);
-
-            // Create a mapping from ID to steward for quick lookup
             var stewardMap = stewards.ToDictionary(s => s.StewardId);
 
             // Create schedule
@@ -382,40 +373,8 @@ namespace Scheduler.Core.Services
                 WeekEnd = weekEnd
             };
 
-            // Get assignments for flights
-            foreach (var flight in flights)
-            {
-                var flightAssignment = new FlightAssignment { Flight = flight };
-
-                // Get stewards assigned to this flight
-                var assignments = await _unitOfWork.Assignments.GetAssignmentsByFlightAsync(flight.FlightId);
-
-                foreach (var assignment in assignments)
-                {
-                    if (stewardMap.TryGetValue(assignment.StewardId, out var steward))
-                    {
-                        if (steward.Role == "Business")
-                        {
-                            flightAssignment.BusinessStewards.Add(steward);
-                        }
-                        else if (steward.Role == "Economy")
-                        {
-                            flightAssignment.EconomyStewards.Add(steward);
-                        }
-
-                        // Add to steward's schedule
-                        if (!schedule.StewardSchedules.ContainsKey(steward.StewardId))
-                            schedule.StewardSchedules[steward.StewardId] = new List<FlightDto>();
-
-                        schedule.StewardSchedules[steward.StewardId].Add(flight);
-
-                        // Add flight hours to schedule tracking
-                        schedule.AddStewardHours(steward.StewardId, flight.FlightTime);
-                    }
-                }
-
-                schedule.FlightAssignments.Add(flightAssignment);
-            }
+            // Load flight assignments
+            await LoadFlightAssignments(schedule, flights, stewardMap);
 
             // Calculate fitness score
             schedule.FitnessScore = FitnessCalculator.CalculateScheduleFitness(schedule, stewards);
@@ -423,13 +382,72 @@ namespace Scheduler.Core.Services
             return schedule;
         }
 
+        private async Task LoadFlightAssignments(
+            WeeklySchedule schedule,
+            List<FlightDto> flights,
+            Dictionary<int, StewardDto> stewardMap)
+        {
+            foreach (var flight in flights)
+            {
+                var flightAssignment = new FlightAssignment { Flight = flight };
+
+                // Get stewards assigned to this flight
+                var assignments = await _unitOfWork.Assignments.GetAssignmentsByFlightAsync(flight.FlightId);
+
+                // Add stewards to the assignment
+                ProcessFlightAssignments(assignments, flightAssignment, stewardMap, schedule, flight);
+
+                schedule.FlightAssignments.Add(flightAssignment);
+            }
+        }
+
+        private void ProcessFlightAssignments(
+            IEnumerable<Assignment> assignments,
+            FlightAssignment flightAssignment,
+            Dictionary<int, StewardDto> stewardMap,
+            WeeklySchedule schedule,
+            FlightDto flight)
+        {
+            foreach (var assignment in assignments)
+            {
+                if (stewardMap.TryGetValue(assignment.StewardId, out var steward))
+                {
+                    // Add to the correct steward category
+                    if (steward.Role == "Business")
+                    {
+                        flightAssignment.BusinessStewards.Add(steward);
+                    }
+                    else if (steward.Role == "Economy")
+                    {
+                        flightAssignment.EconomyStewards.Add(steward);
+                    }
+
+                    // Update steward's schedule
+                    UpdateStewardScheduleInformation(steward, flight, schedule);
+                }
+            }
+        }
+
+        private void UpdateStewardScheduleInformation(
+            StewardDto steward,
+            FlightDto flight,
+            WeeklySchedule schedule)
+        {
+            // Add to steward's schedule
+            if (!schedule.StewardSchedules.ContainsKey(steward.StewardId))
+                schedule.StewardSchedules[steward.StewardId] = new List<FlightDto>();
+
+            schedule.StewardSchedules[steward.StewardId].Add(flight);
+
+            // Add flight hours to schedule tracking
+            schedule.AddStewardHours(steward.StewardId, flight.FlightTime);
+        }
+
         // Get a steward's schedule for a specific week
         public async Task<List<FlightDto>> GetStewardScheduleAsync(int stewardId, DateTime weekStart)
         {
             // Normalize to the start of the week (Monday)
-            weekStart = weekStart.Date.AddDays(-(int)weekStart.DayOfWeek + 1);
-            if (weekStart.DayOfWeek == DayOfWeek.Sunday) weekStart = weekStart.AddDays(1);
-
+            weekStart = NormalizeToWeekStart(weekStart);
             var weekEnd = weekStart.AddDays(7);
 
             // Get steward assignments
@@ -445,7 +463,7 @@ namespace Scheduler.Core.Services
             return flights;
         }
 
-        // Helper methods
+        // Helper methods for data access
 
         private async Task<List<FlightDto>> GetFlightsForWeekAsync(DateTime weekStart, DateTime weekEnd)
         {
@@ -458,34 +476,37 @@ namespace Scheduler.Core.Services
             foreach (var flight in flights)
             {
                 var dto = MapFlightToDto(flight);
-
-                // Get required crew counts
-                if (flight.Aircraft != null)
-                {
-                    dto.RequiredBusinessCrew = flight.Aircraft.BusinessClassCrew;
-                    dto.RequiredEconomyCrew = flight.Aircraft.EconomyClassCrew;
-                }
-                else
-                {
-                    // Fallback if aircraft data is missing
-                    var aircraft = await _unitOfWork.AircraftTypes.GetAircraftTypeByNameAsync(flight.AircraftType);
-                    if (aircraft != null)
-                    {
-                        dto.RequiredBusinessCrew = aircraft.BusinessClassCrew;
-                        dto.RequiredEconomyCrew = aircraft.EconomyClassCrew;
-                    }
-                    else
-                    {
-                        // Default values if aircraft not found
-                        dto.RequiredBusinessCrew = 2;
-                        dto.RequiredEconomyCrew = 3;
-                    }
-                }
-
+                await LoadFlightCrewRequirements(flight, dto);
                 flightDtos.Add(dto);
             }
 
             return flightDtos;
+        }
+
+        private async Task LoadFlightCrewRequirements(Flight flight, FlightDto dto)
+        {
+            // Get required crew counts from aircraft
+            if (flight.Aircraft != null)
+            {
+                dto.RequiredBusinessCrew = flight.Aircraft.BusinessClassCrew;
+                dto.RequiredEconomyCrew = flight.Aircraft.EconomyClassCrew;
+            }
+            else
+            {
+                // Fallback if aircraft data is missing
+                var aircraft = await _unitOfWork.AircraftTypes.GetAircraftTypeByNameAsync(flight.AircraftType);
+                if (aircraft != null)
+                {
+                    dto.RequiredBusinessCrew = aircraft.BusinessClassCrew;
+                    dto.RequiredEconomyCrew = aircraft.EconomyClassCrew;
+                }
+                else
+                {
+                    // Default values if aircraft not found
+                    dto.RequiredBusinessCrew = 2;
+                    dto.RequiredEconomyCrew = 3;
+                }
+            }
         }
 
         private async Task<List<StewardDto>> GetAllStewardsWithDetailsAsync(DateTime weekStart)
@@ -499,42 +520,50 @@ namespace Scheduler.Core.Services
 
             foreach (var steward in stewards)
             {
-                var dto = new StewardDto
-                {
-                    StewardId = steward.StewardId,
-                    FirstName = steward.FirstName,
-                    LastName = steward.LastName,
-                    Role = steward.Role.ToString(),
-                    IsSenior = steward.IsSenior,
-                    JoiningDate = steward.JoiningDate,
-                    LastFlightEndTime = steward.LastFlightEndTime,
-                };
+                var dto = MapStewardToDto(steward);
 
-                // Load hours for the current month only
-                float monthlyHours = await _unitOfWork.Stewards.GetMonthlyHoursAsync(
-                    steward.StewardId, year, month);
-
-                // Set the monthly hours
-                dto.MonthlyHours = monthlyHours;
-
-                // Get license IDs
-                var licenseIds = await _unitOfWork.Stewards.GetStewardLicenseIdsAsync(steward.StewardId);
-                dto.LicenseIds = licenseIds.ToList();
-
-                // Get language IDs
-                var languageIds = await _unitOfWork.Stewards.GetStewardLanguageIdsAsync(steward.StewardId);
-                dto.LanguageIds = languageIds.ToList();
-
-                // Get feedback counts
-                var positiveFeedbackCount = await _unitOfWork.Feedbacks.GetPositiveFeedbackCountAsync(steward.StewardId);
-                dto.PositiveFeedbackCount = positiveFeedbackCount;
-                var negativeFeedbackCount = await _unitOfWork.Feedbacks.GetNegativeFeedbackCountAsync(steward.StewardId);
-                dto.NegativeFeedbackCount = negativeFeedbackCount;
+                // Load additional steward information
+                await LoadStewardDetails(dto, steward.StewardId, year, month);
 
                 dtos.Add(dto);
             }
 
             return dtos;
+        }
+
+        private StewardDto MapStewardToDto(Steward steward)
+        {
+            return new StewardDto
+            {
+                StewardId = steward.StewardId,
+                FirstName = steward.FirstName,
+                LastName = steward.LastName,
+                Role = steward.Role.ToString(),
+                IsSenior = steward.IsSenior,
+                JoiningDate = steward.JoiningDate,
+                LastFlightEndTime = steward.LastFlightEndTime,
+            };
+        }
+
+        private async Task LoadStewardDetails(StewardDto dto, int stewardId, int year, int month)
+        {
+            // Load hours for the current month
+            float monthlyHours = await _unitOfWork.Stewards.GetMonthlyHoursAsync(stewardId, year, month);
+            dto.MonthlyHours = monthlyHours;
+
+            // Get license IDs
+            var licenseIds = await _unitOfWork.Stewards.GetStewardLicenseIdsAsync(stewardId);
+            dto.LicenseIds = licenseIds.ToList();
+
+            // Get language IDs
+            var languageIds = await _unitOfWork.Stewards.GetStewardLanguageIdsAsync(stewardId);
+            dto.LanguageIds = languageIds.ToList();
+
+            // Get feedback counts
+            var positiveFeedbackCount = await _unitOfWork.Feedbacks.GetPositiveFeedbackCountAsync(stewardId);
+            dto.PositiveFeedbackCount = positiveFeedbackCount;
+            var negativeFeedbackCount = await _unitOfWork.Feedbacks.GetNegativeFeedbackCountAsync(stewardId);
+            dto.NegativeFeedbackCount = negativeFeedbackCount;
         }
 
         private FlightDto MapFlightToDto(Flight flight)

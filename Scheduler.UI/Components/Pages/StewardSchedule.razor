@@ -306,7 +306,7 @@ else if (!model.IsLoading && selectedStewardId > 0)
 
 @code {
     private int selectedStewardId = 0;
-    private DateTime selectedDate = DateTime.Now;
+    private DateTime selectedDate = new DateTime(2025, 2, 17);
     private StewardScheduleViewModel model = new StewardScheduleViewModel();
 
     protected override async Task OnInitializedAsync()
@@ -329,7 +329,7 @@ else if (!model.IsLoading && selectedStewardId > 0)
 
     private void CurrentWeek()
     {
-        selectedDate = DateTime.Now;
+        selectedDate = new DateTime(2025, 2, 17);
         AdjustSelectedDateToMonday();
     }
 

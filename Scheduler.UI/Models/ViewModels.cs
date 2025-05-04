@@ -57,16 +57,8 @@ namespace Scheduler.UI.Models
     {
         [Required]
         [Display(Name = "Week Start Date")]
-        public DateTime SelectedDate { get; set; } = DateTime.Now;
+        public DateTime SelectedDate { get; set; } = new DateTime(2025, 2, 17)  ;
 
-        [Display(Name = "Override Existing")]
-        public bool OverrideExisting { get; set; } = true;
-
-        [Display(Name = "Algorithm Preset")]
-        public string AlgorithmPreset { get; set; } = "balanced";
-
-        public int GenerationProgress { get; set; }
-        public string CurrentStep { get; set; } = string.Empty;
         public bool GenerationCompleted { get; set; }
     }
 

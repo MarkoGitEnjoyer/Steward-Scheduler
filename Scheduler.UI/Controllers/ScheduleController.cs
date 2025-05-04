@@ -60,29 +60,20 @@ namespace Scheduler.UI.Controllers
             {
                 _generationState = model;
                 _generationState.IsLoading = true;
-                _generationState.GenerationProgress = 0;
-                _generationState.CurrentStep = "Initializing...";
                 _generationState.ErrorMessage = null;
                 _generationState.GenerationCompleted = false;
 
                 // Adjust to Monday of the selected week
                 _generationState.SelectedDate = AdjustToMonday(_generationState.SelectedDate);
-
-                // Start a timer to simulate progress (since we can't get real-time updates from the algorithm)
-                StartProgressSimulation();
-
-                // Call the scheduling service to generate a schedule
-                _generationState.CurrentStep = "Generating schedule...";
+               
                 var generatedSchedule = await _schedulingService.GenerateWeeklyScheduleAsync(_generationState.SelectedDate);
 
                 // Save the generated schedule
-                _generationState.CurrentStep = "Saving schedule to database...";
                 await _schedulingService.SaveScheduleAsync(generatedSchedule);
 
                 // Complete the progress
                 StopProgressSimulation();
-                _generationState.GenerationProgress = 100;
-                _generationState.CurrentStep = "Schedule generation completed!";
+             
                 _generationState.GenerationCompleted = true;
             }
             catch (Exception ex)
@@ -96,11 +87,6 @@ namespace Scheduler.UI.Controllers
             }
         }
 
-        private void StartProgressSimulation()
-        {
-            // Use a timer to simulate progress
-            _progressTimer = new System.Threading.Timer(UpdateProgress, null, 0, 500);
-        }
 
         private void StopProgressSimulation()
         {
@@ -108,26 +94,6 @@ namespace Scheduler.UI.Controllers
             _progressTimer = null;
         }
 
-        private void UpdateProgress(object? state)
-        {
-            // Simulate progressive updates
-            if (_generationState.GenerationProgress < 95)
-            {
-                // Randomly increase progress
-                int increment = new Random().Next(1, 5);
-                _generationState.GenerationProgress = Math.Min(95, _generationState.GenerationProgress + increment);
-
-                // Update the current step based on progress
-                if (_generationState.GenerationProgress < 30)
-                    _generationState.CurrentStep = "Loading flight and steward data...";
-                else if (_generationState.GenerationProgress < 50)
-                    _generationState.CurrentStep = "Creating initial population...";
-                else if (_generationState.GenerationProgress < 80)
-                    _generationState.CurrentStep = "Running genetic algorithm...";
-                else
-                    _generationState.CurrentStep = "Finalizing optimal schedule...";
-            }
-        }
 
         private DateTime AdjustToMonday(DateTime date)
         {

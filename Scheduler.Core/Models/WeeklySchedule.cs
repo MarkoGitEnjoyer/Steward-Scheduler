@@ -24,14 +24,18 @@ namespace Scheduler.Core.Models
         // Fitness score for genetic algorithm
         public float FitnessScore { get; set; }
 
-        // Check if adding more hours to a steward would exceed the 90-hour limit
+        /// <summary>
+        /// Check if adding more hours to a steward would exceed the 90-hour limit
+        /// </summary>
         public bool WouldExceedHourLimit(int stewardId, float monthlyHours, float additionalHours)
         {
             float currentScheduledHours = GetStewardScheduledHours(stewardId);
             return (monthlyHours + currentScheduledHours + additionalHours) > (MAX_HOURS_LIMIT - SAFETY_MARGIN);
         }
 
-        // Add hours to a steward's schedule - return success/failure
+        /// <summary>
+        /// Add hours to a steward's schedule - return success/failure
+        /// </summary>
         public bool AddStewardHours(int stewardId, float hours)
         {
             if (!StewardHours.ContainsKey(stewardId))
@@ -43,7 +47,9 @@ namespace Scheduler.Core.Models
             return true;
         }
 
-        // Remove hours from a steward's schedule
+        /// <summary>
+        /// Remove hours from a steward's schedule
+        /// </summary>
         public void RemoveStewardHours(int stewardId, float hours)
         {
             if (StewardHours.ContainsKey(stewardId))
@@ -56,7 +62,9 @@ namespace Scheduler.Core.Models
             }
         }
 
-        // Get a steward's current scheduled hours
+        /// <summary>
+        /// Get a steward's current scheduled hours
+        /// </summary>
         public float GetStewardScheduledHours(int stewardId)
         {
             if (StewardHours.ContainsKey(stewardId))
@@ -66,13 +74,17 @@ namespace Scheduler.Core.Models
             return 0;
         }
 
-        // Get a steward's total hours (monthly base + scheduled)
+        /// <summary>
+        /// Get a steward's total hours (monthly base + scheduled)
+        /// </summary>
         public float GetStewardTotalHours(int stewardId, float baseMonthlyHours)
         {
             return baseMonthlyHours + GetStewardScheduledHours(stewardId);
         }
 
-        // Initialize steward hours for the entire schedule
+        /// <summary>
+        /// Initialize steward hours for the entire schedule
+        /// </summary>
         public void InitializeStewardHours(List<StewardDto> stewards)
         {
             // Clear the tracking dictionary
@@ -82,55 +94,82 @@ namespace Scheduler.Core.Models
             foreach (var assignment in FlightAssignments)
             {
                 float flightTime = assignment.Flight.FlightTime;
-
-                foreach (var steward in assignment.BusinessStewards.Concat(assignment.EconomyStewards))
-                {
-                    // Update the StewardHours tracking dictionary
-                    if (!StewardHours.ContainsKey(steward.StewardId))
-                    {
-                        StewardHours[steward.StewardId] = 0;
-                    }
-                    StewardHours[steward.StewardId] += flightTime;
-                }
+                UpdateStewardHoursForAssignment(assignment, flightTime);
             }
         }
 
-        // Remove a steward from a flight and update hours
+        /// <summary>
+        /// Update hours for stewards in an assignment
+        /// </summary>
+        private void UpdateStewardHoursForAssignment(FlightAssignment assignment, float flightTime)
+        {
+            foreach (var steward in assignment.BusinessStewards.Concat(assignment.EconomyStewards))
+            {
+                // Update the StewardHours tracking dictionary
+                if (!StewardHours.ContainsKey(steward.StewardId))
+                {
+                    StewardHours[steward.StewardId] = 0;
+                }
+                StewardHours[steward.StewardId] += flightTime;
+            }
+        }
+
+        /// <summary>
+        /// Remove a steward from a flight and update hours
+        /// </summary>
         public void RemoveStewardFromFlight(StewardDto steward, FlightAssignment assignment)
         {
-            bool removed = false;
-
-            // Check role and remove from appropriate list
-            if (steward.Role == "Business")
-            {
-                removed = assignment.BusinessStewards.Remove(steward);
-            }
-            else if (steward.Role == "Economy")
-            {
-                removed = assignment.EconomyStewards.Remove(steward);
-            }
+            bool removed = RemoveStewardFromAssignment(steward, assignment);
 
             if (removed)
             {
-                // Update tracking dictionary
-                if (StewardHours.ContainsKey(steward.StewardId))
-                {
-                    StewardHours[steward.StewardId] -= assignment.Flight.FlightTime;
-                    if (StewardHours[steward.StewardId] < 0)
-                    {
-                        StewardHours[steward.StewardId] = 0;
-                    }
-                }
-
-                // Update steward's schedule
-                if (StewardSchedules.ContainsKey(steward.StewardId))
-                {
-                    StewardSchedules[steward.StewardId].Remove(assignment.Flight);
-                }
+                // Update tracking
+                UpdateTrackingAfterRemoval(steward, assignment);
             }
         }
 
-        // Verify that no steward exceeds 90 hours
+        /// <summary>
+        /// Remove steward from the appropriate steward list in the assignment
+        /// </summary>
+        private bool RemoveStewardFromAssignment(StewardDto steward, FlightAssignment assignment)
+        {
+            // Check role and remove from appropriate list
+            if (steward.Role == "Business")
+            {
+                return assignment.BusinessStewards.Remove(steward);
+            }
+            else if (steward.Role == "Economy")
+            {
+                return assignment.EconomyStewards.Remove(steward);
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Update tracking dictionaries after removing a steward from a flight
+        /// </summary>
+        private void UpdateTrackingAfterRemoval(StewardDto steward, FlightAssignment assignment)
+        {
+            // Update hours tracking
+            if (StewardHours.ContainsKey(steward.StewardId))
+            {
+                StewardHours[steward.StewardId] -= assignment.Flight.FlightTime;
+                if (StewardHours[steward.StewardId] < 0)
+                {
+                    StewardHours[steward.StewardId] = 0;
+                }
+            }
+
+            // Update steward's schedule
+            if (StewardSchedules.ContainsKey(steward.StewardId))
+            {
+                StewardSchedules[steward.StewardId].Remove(assignment.Flight);
+            }
+        }
+
+        /// <summary>
+        /// Verify that no steward exceeds 90 hours
+        /// </summary>
         public bool VerifyHourConstraints(List<StewardDto> stewards)
         {
             var stewardMap = stewards.ToDictionary(s => s.StewardId);
@@ -155,7 +194,9 @@ namespace Scheduler.Core.Models
             return true;
         }
 
-        // Clone method for genetic operations
+        /// <summary>
+        /// Clone method for genetic operations
+        /// </summary>
         public WeeklySchedule Clone()
         {
             var clone = new WeeklySchedule
@@ -166,7 +207,23 @@ namespace Scheduler.Core.Models
                 TotalFlightCount = this.TotalFlightCount
             };
 
-            // Deep copy flight assignments
+            // Clone flight assignments
+            CloneFlightAssignments(clone);
+
+            // Clone steward schedules
+            CloneStewardSchedules(clone);
+
+            // Clone steward hours
+            CloneStewardHours(clone);
+
+            return clone;
+        }
+
+        /// <summary>
+        /// Clone flight assignments to the target schedule
+        /// </summary>
+        private void CloneFlightAssignments(WeeklySchedule clone)
+        {
             foreach (var assignment in this.FlightAssignments)
             {
                 var newAssignment = new FlightAssignment
@@ -179,34 +236,47 @@ namespace Scheduler.Core.Models
 
                 clone.FlightAssignments.Add(newAssignment);
             }
+        }
 
-            // Deep copy steward schedules
+        /// <summary>
+        /// Clone steward schedules to the target schedule
+        /// </summary>
+        private void CloneStewardSchedules(WeeklySchedule clone)
+        {
             foreach (var steward in this.StewardSchedules)
             {
                 clone.StewardSchedules[steward.Key] = new List<FlightDto>(steward.Value);
             }
+        }
 
-            // Copy steward hours
+        /// <summary>
+        /// Clone steward hours to the target schedule
+        /// </summary>
+        private void CloneStewardHours(WeeklySchedule clone)
+        {
             foreach (var entry in this.StewardHours)
             {
                 clone.StewardHours[entry.Key] = entry.Value;
             }
-
-            return clone;
         }
 
-        // Helper method to calculate a steward's current flight hours in this schedule
+        /// <summary>
+        /// Helper method to calculate a steward's current flight hours in this schedule
+        /// </summary>
         public float GetStewardFlightHours(int stewardId)
         {
+            // If we have cached hours, use them
             if (StewardHours.ContainsKey(stewardId))
             {
                 return StewardHours[stewardId];
             }
 
+            // Calculate from schedule
             if (!StewardSchedules.ContainsKey(stewardId))
                 return 0;
 
             float hours = StewardSchedules[stewardId].Sum(f => f.FlightTime);
+
             // Cache the result
             StewardHours[stewardId] = hours;
             return hours;

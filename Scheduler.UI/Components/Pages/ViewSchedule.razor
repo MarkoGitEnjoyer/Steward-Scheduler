@@ -64,10 +64,6 @@
                             @onclick="() => viewMode = vday">
                         Day View
                     </button>
-                    <button class="btn @(viewMode == "week" ? "btn-primary" : "btn-outline-primary")" 
-                            @onclick="() => viewMode = vweek">
-                        Week View
-                    </button>
                     <button class="btn @(viewMode == "list" ? "btn-primary" : "btn-outline-primary")" 
                             @onclick="() => viewMode = vlist">
                         List View
@@ -199,185 +195,6 @@
                         <p>There are no flights scheduled for this day.</p>
                     </div>
                 }
-            }
-            else if (viewMode == "week")
-            {
-                <div class="week-calendar">
-                    <div class="day-header">
-                        <div class="time-column"></div>
-                        @for (int i = 0; i < 7; i++)
-                        {
-                            var day = model.WeekStart.AddDays(i);
-                            <div class="day-column">
-                                <div class="day-name">@day.ToString("ddd")</div>
-                                <div class="day-date">@day.ToString("MMM dd")</div>
-                            </div>
-                        }
-                    </div>
-
-                    <div class="time-slots">
-                        @for (int hour = 0; hour < 24; hour++)
-                        {
-                            <div class="time-slot">
-                                <div class="time-label">@($"{hour:00}:00")</div>
-                                @for (int day = 0; day < 7; day++)
-                                {
-                                    <div class="day-slot">
-                                        @{
-                                            var currentDay = model.WeekStart.AddDays(day);
-                                            var slotStart = new DateTime(currentDay.Year, currentDay.Month, currentDay.Day, hour, 0, 0);
-                                            var slotEnd = slotStart.AddHours(1);
-
-                                            var flightsInSlot = model.FlightAssignments
-                                                .Where(fa =>
-                                                    (fa.Flight.DepartureTime >= slotStart && fa.Flight.DepartureTime < slotEnd) ||
-                                                    (fa.Flight.DepartureTime < slotStart && fa.Flight.ArrivalTime > slotStart))
-                                                .ToList();
-
-                                            foreach (var flight in flightsInSlot)
-                                            {
-                                                var isStart = flight.Flight.DepartureTime >= slotStart && flight.Flight.DepartureTime < slotEnd;
-
-                                                <div class="flight-event @(flight.IsComplete ? "complete" : "incomplete") @(isStart ? "flight-start" : "")">
-                                                    @if (isStart)
-                                                    {
-                                                        <div class="flight-time">@flight.Flight.DepartureTime.ToString("HH:mm")</div>
-                                                        <div class="flight-title">@flight.Flight.FlightNumber</div>
-                                                        <div class="flight-details">@flight.Flight.Destination</div>
-                                                    }
-                                                    else
-                                                    {
-                                                        <div class="in-flight-indicator">
-                                                            <i class="oi oi-arrow-right"></i> @flight.Flight.FlightNumber
-                                                        </div>
-                                                    }
-                                                </div>
-                                            }
-                                        }
-                                    </div>
-                                }
-                            </div>
-                        }
-                    </div>
-                </div>
-                
-                <style>
-                    .week-calendar {
-                        display: flex;
-                        flex-direction: column;
-                        border: 1px solid #ddd;
-                        border-radius: 0.25rem;
-                        margin-top: 1rem;
-                    }
-
-                    .day-header {
-                        display: flex;
-                        background-color: #f8f9fa;
-                        border-bottom: 1px solid #ddd;
-                    }
-
-                    .time-column {
-                        width: 60px;
-                        border-right: 1px solid #ddd;
-                    }
-
-                    .day-column {
-                        flex: 1;
-                        text-align: center;
-                        padding: 8px 4px;
-                        border-right: 1px solid #ddd;
-                    }
-
-                    .day-column:last-child {
-                        border-right: none;
-                    }
-
-                    .day-name {
-                        font-weight: bold;
-                    }
-
-                    .day-date {
-                        font-size: 0.8rem;
-                        color: #6c757d;
-                    }
-
-                    .time-slots {
-                        display: flex;
-                        flex-direction: column;
-                    }
-
-                    .time-slot {
-                        display: flex;
-                        min-height: 60px;
-                        border-bottom: 1px solid #eee;
-                    }
-
-                    .time-slot:last-child {
-                        border-bottom: none;
-                    }
-
-                    .time-label {
-                        width: 60px;
-                        padding: 4px;
-                        text-align: center;
-                        font-size: 0.8rem;
-                        color: #6c757d;
-                        border-right: 1px solid #ddd;
-                    }
-
-                    .day-slot {
-                        flex: 1;
-                        padding: 4px;
-                        border-right: 1px solid #eee;
-                        position: relative;
-                    }
-
-                    .day-slot:last-child {
-                        border-right: none;
-                    }
-
-                    .flight-event {
-                        padding: 4px;
-                        margin-bottom: 2px;
-                        border-radius: 4px;
-                        font-size: 0.8rem;
-                        overflow: hidden;
-                    }
-
-                    .flight-start {
-                        border-left: 4px solid #0d6efd;
-                    }
-
-                    .complete {
-                        background-color: #d1e7dd;
-                    }
-
-                    .incomplete {
-                        background-color: #fff3cd;
-                    }
-
-                    .flight-time {
-                        font-weight: bold;
-                    }
-
-                    .flight-title {
-                        white-space: nowrap;
-                        overflow: hidden;
-                        text-overflow: ellipsis;
-                    }
-
-                    .flight-details {
-                        font-size: 0.75rem;
-                        white-space: nowrap;
-                        overflow: hidden;
-                        text-overflow: ellipsis;
-                    }
-
-                    .in-flight-indicator {
-                        font-style: italic;
-                        color: #6c757d;
-                    }
-                </style>
             }
             else // list view
             {
@@ -589,13 +406,12 @@
 </style>
 
 @code {
-    private DateTime selectedDate = DateTime.Now;
-    private DateTime selectedDay = DateTime.Now;
+    private DateTime selectedDate = new DateTime(2025, 2, 17);
+    private DateTime selectedDay = new DateTime(2025, 2, 17);
     private ScheduleViewModel model = new ScheduleViewModel();
     private string viewMode = "list";
     private string filterText = "";
     private string vday = "day";
-    private string vweek = "week";
     private string vlist = "list";
     private string sortField = "departure";
     private string sortDirection = "asc";
@@ -648,7 +464,7 @@
     
     private void CurrentWeek()
     {
-        selectedDate = DateTime.Now;
+        selectedDate = new DateTime(2025, 2, 17);
         AdjustSelectedDateToMonday();
         selectedDay = selectedDate;
         LoadSchedule();

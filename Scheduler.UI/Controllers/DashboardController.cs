@@ -20,7 +20,7 @@ namespace Scheduler.UI.Controllers
             try
             {
                 // Get current week's start date (Monday)
-                var today = DateTime.Now;
+                var today = new DateTime(2025, 2, 17);
                 var currentWeekStart = today.AddDays(-(int)today.DayOfWeek + 1);
                 if (currentWeekStart.DayOfWeek == DayOfWeek.Sunday) currentWeekStart = currentWeekStart.AddDays(1);
 
@@ -64,7 +64,7 @@ namespace Scheduler.UI.Controllers
                         .ToList();
                 }
 
-                viewModel.LastUpdated = DateTime.Now;
+                viewModel.LastUpdated = new DateTime(2025, 2, 17);
             }
             catch (Exception ex)
             {
