@@ -24,6 +24,8 @@ namespace Scheduler.Core.Models
         // Fitness score for genetic algorithm
         public float FitnessScore { get; set; }
 
+        #region Hour Management Methods
+
         /// <summary>
         /// Check if adding more hours to a steward would exceed the 90-hour limit
         /// </summary>
@@ -114,6 +116,10 @@ namespace Scheduler.Core.Models
             }
         }
 
+        #endregion
+
+        #region Steward Management Methods
+
         /// <summary>
         /// Remove a steward from a flight and update hours
         /// </summary>
@@ -167,32 +173,254 @@ namespace Scheduler.Core.Models
             }
         }
 
+        #endregion
+
+        #region Validation Methods
+
         /// <summary>
         /// Verify that no steward exceeds 90 hours
         /// </summary>
-        public bool VerifyHourConstraints(List<StewardDto> stewards)
+        public bool VerifyHourConstraints(List<StewardDto> stewards = null)
         {
-            var stewardMap = stewards.ToDictionary(s => s.StewardId);
-
-            foreach (var entry in StewardHours)
+            if (stewards != null)
             {
-                int stewardId = entry.Key;
-                float scheduledHours = entry.Value;
+                var stewardMap = stewards.ToDictionary(s => s.StewardId);
 
-                if (stewardMap.TryGetValue(stewardId, out var steward))
+                foreach (var entry in StewardHours)
                 {
-                    // Calculate total hours (base + scheduled)
-                    float totalHours = steward.MonthlyHours + scheduledHours;
+                    int stewardId = entry.Key;
+                    float scheduledHours = entry.Value;
 
-                    if (totalHours > MAX_HOURS_LIMIT)
+                    if (stewardMap.TryGetValue(stewardId, out var steward))
                     {
-                        Console.WriteLine($"Hour constraint violation: Steward {stewardId} has {totalHours} hours");
+                        // Calculate total hours (base + scheduled)
+                        float totalHours = steward.MonthlyHours + scheduledHours;
+
+                        if (totalHours > MAX_HOURS_LIMIT)
+                        {
+                            LogHourConstraintViolation(stewardId, totalHours);
+                            return false;
+                        }
+                    }
+                }
+            }
+            else
+            {
+                // Without steward data, just check that no scheduled hours exceed 90
+                foreach (var entry in StewardHours)
+                {
+                    if (entry.Value > MAX_HOURS_LIMIT)
+                    {
+                        LogHourConstraintViolation(entry.Key, entry.Value);
                         return false;
                     }
                 }
             }
+
             return true;
         }
+
+        /// <summary>
+        /// Validate that a schedule respects all constraints
+        /// </summary>
+        public bool ValidateSchedule()
+        {
+            if (FlightAssignments.Count == 0)
+                return false;
+
+            return !HasOverlappingFlights() &&
+                   ValidateScheduleRestTimes() &&
+                   VerifyHourConstraints();
+        }
+
+        /// <summary>
+        /// Check if there are any overlapping flights in the schedule
+        /// </summary>
+        public bool HasOverlappingFlights()
+        {
+            // Check each steward's schedule for overlapping flights
+            foreach (var kvp in StewardSchedules)
+            {
+                var flights = kvp.Value;
+
+                // Sort flights by departure time
+                var orderedFlights = flights.OrderBy(f => f.DepartureTime).ToList();
+
+                // Check for overlaps
+                for (int i = 0; i < orderedFlights.Count - 1; i++)
+                {
+                    for (int j = i + 1; j < orderedFlights.Count; j++)
+                    {
+                        if (StewardDto.DoFlightsOverlap(orderedFlights[i], orderedFlights[j]))
+                        {
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Check if a schedule adheres to rest time constraints
+        /// </summary>
+        public bool ValidateScheduleRestTimes()
+        {
+            if (StewardSchedules.Count == 0)
+                return true; // Empty schedules are valid
+
+            foreach (var kvp in StewardSchedules)
+            {
+                int stewardId = kvp.Key;
+                var flights = kvp.Value;
+
+                if (flights.Count <= 1)
+                    continue; // Only one flight, no rest issues
+
+                // Sort flights by departure time
+                var sortedFlights = flights.OrderBy(f => f.DepartureTime).ToList();
+
+                // Check consecutive flight pairs for rest time
+                for (int i = 0; i < sortedFlights.Count - 1; i++)
+                {
+                    var currentFlight = sortedFlights[i];
+                    var nextFlight = sortedFlights[i + 1];
+
+                    // Calculate rest time
+                    TimeSpan restTime = nextFlight.DepartureTime - currentFlight.ArrivalTime;
+
+                    // Check if rest time is less than 12 hours
+                    if (restTime.TotalHours < 12)
+                    {
+                        return false;
+                    }
+                }
+            }
+
+            return true;
+        }
+
+        #endregion
+
+        #region Schedule Rebuilding Methods
+
+        /// <summary>
+        /// Rebuild steward schedules after modifications
+        /// </summary>
+        public void RebuildStewardSchedules()
+        {
+            // Clear existing schedules
+            StewardSchedules.Clear();
+            StewardHours.Clear();
+
+            // Rebuild from flight assignments
+            foreach (var assignment in FlightAssignments)
+            {
+                float flightTime = assignment.Flight.FlightTime;
+
+                // Process business stewards
+                UpdateStewardSchedulesForGroup(assignment.BusinessStewards, assignment.Flight, flightTime);
+
+                // Process economy stewards
+                UpdateStewardSchedulesForGroup(assignment.EconomyStewards, assignment.Flight, flightTime);
+            }
+
+            // Sort each steward's flights chronologically
+            SortStewardFlights();
+
+            // Update LastFlightEndTime for each steward
+            UpdateStewardsLastFlightTime();
+        }
+
+        private void UpdateStewardSchedulesForGroup(
+            List<StewardDto> stewards,
+            FlightDto flight,
+            float flightTime)
+        {
+            foreach (var steward in stewards)
+            {
+                if (!StewardSchedules.ContainsKey(steward.StewardId))
+                    StewardSchedules[steward.StewardId] = new List<FlightDto>();
+
+                StewardSchedules[steward.StewardId].Add(flight);
+
+                // Track hours
+                if (!StewardHours.ContainsKey(steward.StewardId))
+                    StewardHours[steward.StewardId] = 0;
+
+                StewardHours[steward.StewardId] += flightTime;
+            }
+        }
+
+        private void SortStewardFlights()
+        {
+            foreach (var kvp in StewardSchedules.ToDictionary(x => x.Key, x => x.Value))
+            {
+                int stewardId = kvp.Key;
+                var flights = kvp.Value;
+
+                // Sort flights by departure time
+                var sortedFlights = flights.OrderBy(f => f.DepartureTime).ToList();
+                StewardSchedules[stewardId] = sortedFlights;
+            }
+        }
+
+        private void UpdateStewardsLastFlightTime()
+        {
+            foreach (var kvp in StewardSchedules)
+            {
+                int stewardId = kvp.Key;
+                var flights = kvp.Value;
+
+                if (flights.Any())
+                {
+                    // Find the latest arrival time
+                    var lastArrival = flights.Max(f => f.ArrivalTime);
+
+                    // Find the corresponding steward and update their LastFlightEndTime
+                    var steward = FlightAssignments
+                        .SelectMany(fa => fa.BusinessStewards.Concat(fa.EconomyStewards))
+                        .FirstOrDefault(s => s.StewardId == stewardId);
+
+                    if (steward != null)
+                    {
+                        steward.LastFlightEndTime = lastArrival;
+                    }
+                }
+            }
+        }
+
+        #endregion
+
+        #region Logging Methods
+
+        public void LogFlightScheduled(FlightDto flight, FlightAssignment flightAssignment)
+        {
+            Console.WriteLine($"Scheduled flight {flight.FlightId}: Priority {flight.Priority}, " +
+                            $"Business: {flightAssignment.BusinessStewards.Count}/{flight.RequiredBusinessCrew}, " +
+                            $"Economy: {flightAssignment.EconomyStewards.Count}/{flight.RequiredEconomyCrew}");
+        }
+
+        public void LogFlightUnscheduled(FlightDto flight, FlightAssignment flightAssignment)
+        {
+            Console.WriteLine($"Could not schedule flight {flight.FlightId}: Priority {flight.Priority}, " +
+                            $"Business: {flightAssignment.BusinessStewards.Count}/{flight.RequiredBusinessCrew}, " +
+                            $"Economy: {flightAssignment.EconomyStewards.Count}/{flight.RequiredEconomyCrew}");
+        }
+
+        public void LogNoSeniorSteward(int flightId)
+        {
+            Console.WriteLine($"Could not schedule flight {flightId}: No available senior steward");
+        }
+
+        public void LogHourConstraintViolation(int stewardId, float hours)
+        {
+            Console.WriteLine($"Hour constraint violation: Steward {stewardId} has {hours} hours");
+        }
+
+        #endregion
+
+        #region Clone Methods
 
         /// <summary>
         /// Clone method for genetic operations
@@ -259,6 +487,8 @@ namespace Scheduler.Core.Models
                 clone.StewardHours[entry.Key] = entry.Value;
             }
         }
+
+        #endregion
 
         /// <summary>
         /// Helper method to calculate a steward's current flight hours in this schedule

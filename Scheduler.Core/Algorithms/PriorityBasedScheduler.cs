@@ -97,7 +97,7 @@ namespace Scheduler.Core.Algorithms
             if (!assignedSenior)
             {
                 // If we couldn't find a senior steward, skip this flight
-                Console.WriteLine($"Could not schedule flight {flight.FlightId}: No available senior steward");
+                schedule.LogNoSeniorSteward(flight.FlightId);
                 return;
             }
 
@@ -127,11 +127,11 @@ namespace Scheduler.Core.Algorithms
             if (shouldSchedule)
             {
                 schedule.FlightAssignments.Add(flightAssignment);
-                LogScheduledFlight(flight, flightAssignment);
+                schedule.LogFlightScheduled(flight, flightAssignment);
             }
             else
             {
-                LogUnscheduledFlight(flight, flightAssignment);
+                schedule.LogFlightUnscheduled(flight, flightAssignment);
                 // Remove this flight's hours from the stewards (cleanup)
                 CleanupFailedAssignment(flightAssignment, schedule, flightTime);
             }
@@ -267,20 +267,6 @@ namespace Scheduler.Core.Algorithms
             }
 
             return false;
-        }
-
-        private void LogScheduledFlight(FlightDto flight, FlightAssignment flightAssignment)
-        {
-            Console.WriteLine($"Scheduled flight {flight.FlightId}: Priority {flight.Priority}, " +
-                             $"Business: {flightAssignment.BusinessStewards.Count}/{flight.RequiredBusinessCrew}, " +
-                             $"Economy: {flightAssignment.EconomyStewards.Count}/{flight.RequiredEconomyCrew}");
-        }
-
-        private void LogUnscheduledFlight(FlightDto flight, FlightAssignment flightAssignment)
-        {
-            Console.WriteLine($"Could not schedule flight {flight.FlightId}: Priority {flight.Priority}, " +
-                             $"Business: {flightAssignment.BusinessStewards.Count}/{flight.RequiredBusinessCrew}, " +
-                             $"Economy: {flightAssignment.EconomyStewards.Count}/{flight.RequiredEconomyCrew}");
         }
 
         private void CleanupFailedAssignment(FlightAssignment flightAssignment, WeeklySchedule schedule, float flightTime)
