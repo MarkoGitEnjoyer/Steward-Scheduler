@@ -30,16 +30,6 @@ namespace Scheduler.Core.Models
         public float ExperienceYears => (float)(DateTime.Now - JoiningDate).TotalDays / 365;
         public float FeedbackScore => PositiveFeedbackCount - NegativeFeedbackCount;
 
-        // Aircraft license mapping for quick lookup
-        private static readonly Dictionary<string, int> AircraftLicenseMap = new Dictionary<string, int>
-        {
-            { "A321", 1 },
-            { "B777", 2 },
-            { "B737", 3 },
-            { "B747", 4 },
-            { "A350", 5 }
-        };
-
         /// <summary>
         /// Checks if the steward is available at the given time considering rest requirements
         /// </summary>
@@ -117,18 +107,11 @@ namespace Scheduler.Core.Models
         /// </summary>
         public bool HasLicenseForAircraft(string aircraftType)
         {
-            if (string.IsNullOrEmpty(aircraftType) || LicenseIds == null || !LicenseIds.Any())
-                return false;
-
-            // Try to get the license ID for this aircraft type from the dictionary
-            if (AircraftLicenseMap.TryGetValue(aircraftType, out int aircraftLicenseId))
+            if (string.IsNullOrEmpty(aircraftType) || !LicensedAircraftTypes.Any())
             {
-                // Check if the steward has this license
-                return LicenseIds.Contains(aircraftLicenseId);
+                return false;
             }
-
-            // Unknown aircraft type
-            return false;
+            return LicensedAircraftTypes.Contains(aircraftType);
         }
 
         /// <summary>
@@ -155,55 +138,6 @@ namespace Scheduler.Core.Models
             return restTime.TotalHours >= 12;
         }
 
-        /// <summary>
-        /// Creates a deep copy of this steward object
-        /// </summary>
-        public StewardDto Clone()
-        {
-            var clone = CreateBasicClone();
-            CopyCollections(clone);
-            return clone;
-        }
-
-        /// <summary>
-        /// Create a basic clone with simple properties
-        /// </summary>
-        private StewardDto CreateBasicClone()
-        {
-            var clone = new StewardDto
-            {
-                StewardId = this.StewardId,
-                FirstName = this.FirstName,
-                LastName = this.LastName,
-                Role = this.Role,
-                IsSenior = this.IsSenior,
-                JoiningDate = this.JoiningDate,
-                MonthlyHours = this.MonthlyHours,
-                PositiveFeedbackCount = this.PositiveFeedbackCount,
-                NegativeFeedbackCount = this.NegativeFeedbackCount
-            };
-
-            if (this.LastFlightEndTime.HasValue)
-            {
-                clone.LastFlightEndTime = this.LastFlightEndTime.Value;
-            }
-
-            return clone;
-        }
-
-        /// <summary>
-        /// Copy collections to the clone
-        /// </summary>
-        private void CopyCollections(StewardDto clone)
-        {
-            // Clone collections
-            clone.LicenseIds = new List<int>(this.LicenseIds);
-            clone.LanguageIds = new List<int>(this.LanguageIds);
-
-            if (this.LicensedAircraftTypes != null)
-            {
-                clone.LicensedAircraftTypes = new List<string>(this.LicensedAircraftTypes);
-            }
-        }
+    
     }
 }

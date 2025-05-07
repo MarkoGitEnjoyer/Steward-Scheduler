@@ -559,6 +559,9 @@ namespace Scheduler.Core.Services
             var languageIds = await _unitOfWork.Stewards.GetStewardLanguageIdsAsync(stewardId);
             dto.LanguageIds = languageIds.ToList();
 
+            var licenseNames = await _unitOfWork.Stewards.GetStewardLicenseNamesAsync(stewardId);
+            dto.LicensedAircraftTypes = licenseNames.ToList();
+
             // Get feedback counts
             var positiveFeedbackCount = await _unitOfWork.Feedbacks.GetPositiveFeedbackCountAsync(stewardId);
             dto.PositiveFeedbackCount = positiveFeedbackCount;

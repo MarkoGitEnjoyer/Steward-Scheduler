@@ -25,16 +25,6 @@ namespace Scheduler.Core.Models
         public float FitnessScore { get; set; }
 
         #region Hour Management Methods
-
-        /// <summary>
-        /// Check if adding more hours to a steward would exceed the 90-hour limit
-        /// </summary>
-        public bool WouldExceedHourLimit(int stewardId, float monthlyHours, float additionalHours)
-        {
-            float currentScheduledHours = GetStewardScheduledHours(stewardId);
-            return (monthlyHours + currentScheduledHours + additionalHours) > (MAX_HOURS_LIMIT - SAFETY_MARGIN);
-        }
-
         /// <summary>
         /// Add hours to a steward's schedule - return success/failure
         /// </summary>
@@ -74,103 +64,6 @@ namespace Scheduler.Core.Models
                 return StewardHours[stewardId];
             }
             return 0;
-        }
-
-        /// <summary>
-        /// Get a steward's total hours (monthly base + scheduled)
-        /// </summary>
-        public float GetStewardTotalHours(int stewardId, float baseMonthlyHours)
-        {
-            return baseMonthlyHours + GetStewardScheduledHours(stewardId);
-        }
-
-        /// <summary>
-        /// Initialize steward hours for the entire schedule
-        /// </summary>
-        public void InitializeStewardHours(List<StewardDto> stewards)
-        {
-            // Clear the tracking dictionary
-            StewardHours.Clear();
-
-            // Calculate hours for each steward based on current assignments
-            foreach (var assignment in FlightAssignments)
-            {
-                float flightTime = assignment.Flight.FlightTime;
-                UpdateStewardHoursForAssignment(assignment, flightTime);
-            }
-        }
-
-        /// <summary>
-        /// Update hours for stewards in an assignment
-        /// </summary>
-        private void UpdateStewardHoursForAssignment(FlightAssignment assignment, float flightTime)
-        {
-            foreach (var steward in assignment.BusinessStewards.Concat(assignment.EconomyStewards))
-            {
-                // Update the StewardHours tracking dictionary
-                if (!StewardHours.ContainsKey(steward.StewardId))
-                {
-                    StewardHours[steward.StewardId] = 0;
-                }
-                StewardHours[steward.StewardId] += flightTime;
-            }
-        }
-
-        #endregion
-
-        #region Steward Management Methods
-
-        /// <summary>
-        /// Remove a steward from a flight and update hours
-        /// </summary>
-        public void RemoveStewardFromFlight(StewardDto steward, FlightAssignment assignment)
-        {
-            bool removed = RemoveStewardFromAssignment(steward, assignment);
-
-            if (removed)
-            {
-                // Update tracking
-                UpdateTrackingAfterRemoval(steward, assignment);
-            }
-        }
-
-        /// <summary>
-        /// Remove steward from the appropriate steward list in the assignment
-        /// </summary>
-        private bool RemoveStewardFromAssignment(StewardDto steward, FlightAssignment assignment)
-        {
-            // Check role and remove from appropriate list
-            if (steward.Role == "Business")
-            {
-                return assignment.BusinessStewards.Remove(steward);
-            }
-            else if (steward.Role == "Economy")
-            {
-                return assignment.EconomyStewards.Remove(steward);
-            }
-            return false;
-        }
-
-        /// <summary>
-        /// Update tracking dictionaries after removing a steward from a flight
-        /// </summary>
-        private void UpdateTrackingAfterRemoval(StewardDto steward, FlightAssignment assignment)
-        {
-            // Update hours tracking
-            if (StewardHours.ContainsKey(steward.StewardId))
-            {
-                StewardHours[steward.StewardId] -= assignment.Flight.FlightTime;
-                if (StewardHours[steward.StewardId] < 0)
-                {
-                    StewardHours[steward.StewardId] = 0;
-                }
-            }
-
-            // Update steward's schedule
-            if (StewardSchedules.ContainsKey(steward.StewardId))
-            {
-                StewardSchedules[steward.StewardId].Remove(assignment.Flight);
-            }
         }
 
         #endregion
@@ -304,9 +197,7 @@ namespace Scheduler.Core.Models
 
         #region Schedule Rebuilding Methods
 
-        /// <summary>
-        /// Rebuild steward schedules after modifications
-        /// </summary>
+
         public void RebuildStewardSchedules()
         {
             // Clear existing schedules
@@ -490,26 +381,6 @@ namespace Scheduler.Core.Models
 
         #endregion
 
-        /// <summary>
-        /// Helper method to calculate a steward's current flight hours in this schedule
-        /// </summary>
-        public float GetStewardFlightHours(int stewardId)
-        {
-            // If we have cached hours, use them
-            if (StewardHours.ContainsKey(stewardId))
-            {
-                return StewardHours[stewardId];
-            }
 
-            // Calculate from schedule
-            if (!StewardSchedules.ContainsKey(stewardId))
-                return 0;
-
-            float hours = StewardSchedules[stewardId].Sum(f => f.FlightTime);
-
-            // Cache the result
-            StewardHours[stewardId] = hours;
-            return hours;
-        }
     }
 }

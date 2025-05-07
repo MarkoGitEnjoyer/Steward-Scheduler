@@ -59,56 +59,16 @@ namespace Scheduler.Core.Utils
             if (allStewards.Count == 0)
                 return 0;
 
-            // Calculate hours per steward
-            var stewardTotalHours = InitializeStewardHours(allStewards);
-
-            // Add hours from the schedule
-            AddScheduledHoursToTotals(schedule, stewardTotalHours);
-
             // Calculate standard deviation of hours for active stewards
-            float balanceScore = CalculateHoursBalanceScore(schedule, stewardTotalHours);
+            float balanceScore = CalculateHoursBalanceScore(schedule);
 
             return balanceScore;
         }
-
-        private static Dictionary<int, float> InitializeStewardHours(List<StewardDto> allStewards)
+       
+        private static float CalculateHoursBalanceScore(WeeklySchedule schedule)
         {
-            var stewardTotalHours = new Dictionary<int, float>();
-
-            // Initialize with current monthly hours
-            foreach (var steward in allStewards)
-            {
-                stewardTotalHours[steward.StewardId] = steward.MonthlyHours;
-            }
-
-            return stewardTotalHours;
-        }
-
-        private static void AddScheduledHoursToTotals(
-            WeeklySchedule schedule,
-            Dictionary<int, float> stewardTotalHours)
-        {
-            foreach (var kvp in schedule.StewardHours)
-            {
-                int stewardId = kvp.Key;
-                float scheduledHours = kvp.Value;
-
-                if (stewardTotalHours.ContainsKey(stewardId))
-                {
-                    stewardTotalHours[stewardId] += scheduledHours;
-                }
-            }
-        }
-
-        private static float CalculateHoursBalanceScore(
-            WeeklySchedule schedule,
-            Dictionary<int, float> stewardTotalHours)
-        {
-            // Only consider stewards who are actually assigned to flights
-            var activeHours = stewardTotalHours
-                .Where(kv => schedule.StewardHours.ContainsKey(kv.Key) && schedule.StewardHours[kv.Key] > 0)
-                .Select(kv => kv.Value)
-                .ToList();
+            // Get hours for all active stewards (those with hours in the current schedule)
+            var activeHours = schedule.StewardHours.Values.ToList();
 
             if (activeHours.Count == 0)
                 return 0;
@@ -127,23 +87,32 @@ namespace Scheduler.Core.Utils
         private static float CalculateLanguageMatchRate(WeeklySchedule schedule)
         {
             int matchCount = 0;
-            int totalFlightsWithLanguageReq = 0;
+            int totalFlights = schedule.FlightAssignments.Count;
+
+            // If there are no flights, return 1.0 (perfect score)
+            if (totalFlights == 0)
+                return 1.0f;
 
             foreach (var assignment in schedule.FlightAssignments)
             {
+                // Only check flights that have language requirements
                 if (assignment.Flight.RequiredLanguageId.HasValue && assignment.Flight.RequiredLanguageId.Value > 0)
                 {
-                    totalFlightsWithLanguageReq++;
-
                     // Check if any assigned steward speaks the required language
                     bool hasLanguageMatch = HasStewardWithRequiredLanguage(assignment);
 
                     if (hasLanguageMatch)
                         matchCount++;
                 }
+                else
+                {
+                    // Flights without language requirements are considered matched
+                    matchCount++;
+                }
             }
 
-            return totalFlightsWithLanguageReq == 0 ? 1.0f : (float)matchCount / totalFlightsWithLanguageReq;
+            // Return the ratio of matches to total flights
+            return (float)matchCount / totalFlights;
         }
 
         private static bool HasStewardWithRequiredLanguage(FlightAssignment assignment)
@@ -217,53 +186,6 @@ namespace Scheduler.Core.Utils
             return (avgExperience + avgFeedback) / 2.0f;
         }
 
-        // Calculate a steward's suitability score for a specific flight
-        public static float CalculateStewardScore(StewardDto steward, FlightDto flight, SchedulingWeights weights, float averageMonthlyHours)
-        {
-            if (steward == null || flight == null)
-                return 0;
-
-            // Check hard constraints first - if any is violated, return 0
-            if (!steward.HasLicenseForAircraft(flight.AircraftType) ||
-                !steward.IsAvailable(flight.DepartureTime, flight.FlightTime))
-                return 0;
-
-            // Calculate soft constraint scores
-            var scores = CalculateStewardScoreComponents(steward, flight, averageMonthlyHours);
-
-            // Calculate weighted score - ensure it stays within 0-1 range
-            float totalScore = weights.ExperienceWeight * scores.ExperienceScore +
-                             weights.FeedbackWeight * scores.FeedbackScore +
-                             weights.WorkloadBalanceWeight * scores.WorkloadScore +
-                             weights.LanguageWeight * scores.LanguageScore;
-
-            return Math.Min(1.0f, totalScore);
-        }
-
-        private static (float ExperienceScore, float FeedbackScore, float WorkloadScore, float LanguageScore)
-            CalculateStewardScoreComponents(StewardDto steward, FlightDto flight, float averageMonthlyHours)
-        {
-            // Experience score (0-1): More experienced stewards score higher
-            float experienceScore = Math.Min(1.0f, steward.ExperienceYears / 10.0f);
-
-            // Feedback score (0-1): Stewards with more positive feedback score higher
-            float feedbackScore = (steward.PositiveFeedbackCount - steward.NegativeFeedbackCount);
-            feedbackScore = Math.Min(1.0f, Math.Max(0, feedbackScore / 5.0f)); // Normalize to 0-1
-
-            // Workload balance score (0-1): Stewards with fewer flight hours score higher
-            float workloadScore = 1.0f - (steward.MonthlyHours / Math.Max(1, averageMonthlyHours));
-            workloadScore = Math.Max(0, Math.Min(1.0f, workloadScore)); // Clamp to 0-1
-
-            // Language match score (0-1): Stewards who speak the required language score higher
-            float languageScore = 0;
-            if (flight.RequiredLanguageId.HasValue &&
-                flight.RequiredLanguageId.Value > 0 &&
-                steward.LanguageIds.Contains(flight.RequiredLanguageId.Value))
-            {
-                languageScore = 1.0f;
-            }
-
-            return (experienceScore, feedbackScore, workloadScore, languageScore);
-        }
+       
     }
 }
