@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Scheduler.Data.Models;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -137,7 +138,19 @@ namespace Scheduler.Core.Models
             TimeSpan restTime = laterFlight.DepartureTime - earlierFlight.ArrivalTime;
             return restTime.TotalHours >= 12;
         }
-
-    
+        ///<summary>
+        /// Checks whether steward speaks this language or no
+        /// </summary>
+        public bool DoesSpeakLanguage(int? langId)
+        {
+            if (langId.HasValue)
+            {
+                return (LanguageIds != null && LanguageIds.Contains(langId.Value)) ? true: false;
+            }
+            else
+            {
+                return true;
+            }
+        }
     }
 }

@@ -53,9 +53,9 @@ namespace Scheduler.Core.Algorithms
         {
             return new Dictionary<string, List<StewardDto>>
             {
-                ["Business"] = stewards.Where(s => s.Role == "Business").ToList(),
-                ["Economy"] = stewards.Where(s => s.Role == "Economy").ToList(),
-                ["Senior"] = stewards.Where(s => s.Role == "Business" && s.IsSenior).ToList()
+                ["Business"] = stewards.Where(st => st.Role == "Business" && !st.IsSenior).ToList(),
+                ["Economy"] = stewards.Where(st => st.Role == "Economy").ToList(),
+                ["Senior"] = stewards.Where(st => st.IsSenior).ToList(),
             };
         }
 
@@ -152,8 +152,7 @@ namespace Scheduler.Core.Algorithms
                 .Select(s => new
                 {
                     Steward = s,
-                    Score = CalculateStewardScore(s, flight, weights, averageMonthlyHours) +
-                            (90 - (s.MonthlyHours + schedule.GetStewardScheduledHours(s.StewardId))) * 0.5f // Higher score for stewards with more available hours
+                    Score = CalculateStewardScore(s,schedule, flight, weights, averageMonthlyHours)
                 })
                 .OrderByDescending(x => x.Score)
                 .ToList();
@@ -187,14 +186,11 @@ namespace Scheduler.Core.Algorithms
             {
                 // Find business stewards who won't exceed 90 hours and aren't senior
                 var availableBusinessStewards = businessStewards
-                    .Where(s => !flightAssignment.BusinessStewards.Any(assignedSteward => assignedSteward.StewardId == s.StewardId) &&
-                              !s.IsSenior && // Exclude senior stewards - already handled
-                              s.IsAvailableForFlight(flight, schedule))
+                    .Where(s =>  s.IsAvailableForFlight(flight, schedule))
                     .Select(s => new
                     {
                         Steward = s,
-                        Score = CalculateStewardScore(s, flight, weights, averageMonthlyHours) +
-                               (90 - (s.MonthlyHours + schedule.GetStewardScheduledHours(s.StewardId))) * 0.5f
+                        Score = CalculateStewardScore(s,schedule, flight, weights, averageMonthlyHours)
                     })
                     .OrderByDescending(x => x.Score)
                     .Take(remainingBusiness)
@@ -223,8 +219,7 @@ namespace Scheduler.Core.Algorithms
                 .Select(s => new
                 {
                     Steward = s,
-                    Score = CalculateStewardScore(s, flight, weights, averageMonthlyHours) +
-                           (90 - (s.MonthlyHours + schedule.GetStewardScheduledHours(s.StewardId))) * 0.5f
+                    Score = CalculateStewardScore(s,schedule, flight, weights, averageMonthlyHours) 
                 })
                 .OrderByDescending(x => x.Score)
                 .Take(flight.RequiredEconomyCrew)
@@ -285,41 +280,55 @@ namespace Scheduler.Core.Algorithms
         }
 
         // Calculate steward score for flight assignment
-        private float CalculateStewardScore(StewardDto steward, FlightDto flight, SchedulingWeights weights, float averageMonthlyHours)
+        private float CalculateStewardScore(StewardDto steward, WeeklySchedule schedule, FlightDto flight, SchedulingWeights weights, float averageMonthlyHours)
         {
-            if (steward == null || flight == null)
-                return 0;
-
-            // Experience score (0-1): More experienced stewards score higher
+            // Load all scores
             float experienceScore = Math.Min(1.0f, steward.ExperienceYears / 10.0f);
+            float feedbackScore = Math.Min(1.0f, Math.Max(0.0f, steward.FeedbackScore / 5.0f));
+            float workloadScore = CalculateWorkloadForStewad(steward, averageMonthlyHours,schedule);
+            float languageScore = steward.DoesSpeakLanguage(flight.RequiredLanguageId) ? 1.0f : 0.0f;
+            
+            // calculate by using weights
+            float qualityScore = weights.ExperienceWeight * experienceScore +
+                                 weights.FeedbackWeight * feedbackScore +
+                                 weights.WorkloadBalanceWeight * workloadScore +
+                                 weights.LanguageWeight * languageScore;
 
-            // Feedback score (0-1): Stewards with more positive feedback score higher
-            float feedbackScore = (steward.PositiveFeedbackCount - steward.NegativeFeedbackCount);
-            feedbackScore = Math.Min(1.0f, Math.Max(0, feedbackScore / 5.0f)); // Normalize to 0-1
+            //getting priority factor from 0.2 to 1
+            float priorityFactor = flight.Priority / 5.0f;
 
-            // Workload balance score (0-1): Stewards with fewer flight hours score higher
-            float workloadScore = 1.0f - (steward.MonthlyHours / Math.Max(1, averageMonthlyHours));
-            workloadScore = Math.Max(0, Math.Min(1.0f, workloadScore)); // Clamp to 0-1
+            // calculating how much quality of steward matches the flight
+            float matchFactor = 1.0f - Math.Abs(qualityScore - priorityFactor);
 
-            // Language match score (0-1): Stewards who speak the required language score higher
-            float languageScore = 0;
-            if (flight.RequiredLanguageId.HasValue &&
-                flight.RequiredLanguageId.Value > 0 &&
-                steward.LanguageIds.Contains(flight.RequiredLanguageId.Value))
+            // the minimum score we would apply bonus
+            float matchBonusThreshold = 0.6f;
+
+            // the quadratic root exponent to apply bonus
+            float matchScoreExponent = 0.5f;
+
+            // applying bonus if score is higher than the limit
+            float finalScore = matchFactor > matchBonusThreshold ? (float)Math.Pow(matchFactor, matchScoreExponent) : matchFactor;
+
+            return Math.Clamp(finalScore, 0.0f, 1.0f);
+        }
+
+        // function to calculate score for workload based on avg month hours
+        private float CalculateWorkloadForStewad(StewardDto steward, float averageMonthlyHours, WeeklySchedule schedule)
+        {
+            float workloadScore = 0.0f;
+            if (averageMonthlyHours > 0)
             {
-                languageScore = 1.0f;
+                workloadScore = Math.Clamp(
+                    (averageMonthlyHours - (steward.MonthlyHours + schedule.GetStewardScheduledHours(steward.StewardId))) / averageMonthlyHours,
+                    0.0f,
+                    1.0f
+                );
             }
-
-            // Flight priority bonus - high-priority flights get better stewards
-            float priorityBonus = flight.Priority / 5.0f; // 0.2 to 1.0
-
-            // Calculate weighted score with priority bonus
-            float totalScore = (weights.ExperienceWeight * experienceScore +
-                             weights.FeedbackWeight * feedbackScore +
-                             weights.WorkloadBalanceWeight * workloadScore +
-                             weights.LanguageWeight * languageScore) * (1 + priorityBonus * 0.5f);
-
-            return totalScore;
+            else if (steward.MonthlyHours == 0)
+            {
+                workloadScore = 1.0f;
+            }
+            return workloadScore;
         }
     }
 }

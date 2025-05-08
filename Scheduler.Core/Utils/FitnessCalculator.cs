@@ -141,30 +141,27 @@ namespace Scheduler.Core.Utils
 
         private static float CalculateFlightQualityMatch(FlightAssignment assignment)
         {
-            float flightImportance = Math.Min(1.0f, assignment.Flight.Priority / 5.0f); // Normalize to 0-1 for 1-5 scale
+            if (assignment == null || assignment.Flight == null)
+                return 0.0f;
+
+            // making priority from 0.2 to 1
+            float flightImportance = Math.Clamp(assignment.Flight.Priority / 5.0f, 0.0f, 1.0f);
+
             float stewardQuality = CalculateAverageStewardQuality(assignment);
 
-            // Higher score if high-quality stewards are assigned to high-priority flights
-            float matchScore;
+            // calculating how much quality of steward matches the flight
+            float matchFactor = 1.0f - Math.Abs(flightImportance - stewardQuality);
 
-            // If flight is high priority, we want high quality stewards
-            if (flightImportance > 0.7f)
-            {
-                // For high priority flights, we want quality >= importance
-                matchScore = stewardQuality >= flightImportance ? 1.0f : stewardQuality / flightImportance;
-            }
-            else if (flightImportance <= 0.3f)
-            {
-                // For low priority flights, we don't need high quality stewards
-                matchScore = 1.0f - Math.Max(0, stewardQuality - (flightImportance + 0.2f));
-            }
-            else
-            {
-                // For medium priority flights, we want a close match
-                matchScore = 1.0f - Math.Abs(flightImportance - stewardQuality);
-            }
+            // the minimum score we would apply bonus
+            float matchBonusThreshold = 0.6f;
 
-            return matchScore;
+            // the quadratic root exponent to apply bonus
+            float matchScoreExponent = 0.5f;
+
+            // applying bonus if score is higher than the limit
+            float finalScore = matchFactor > matchBonusThreshold ? (float)Math.Pow(matchFactor, matchScoreExponent) : matchFactor;
+
+            return Math.Clamp(finalScore, 0.0f, 1.0f);
         }
 
         private static float CalculateAverageStewardQuality(FlightAssignment assignment)
