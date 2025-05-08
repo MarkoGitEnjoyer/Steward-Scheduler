@@ -86,41 +86,39 @@ namespace Scheduler.Core.Utils
         // Calculate how well language requirements are met
         private static float CalculateLanguageMatchRate(WeeklySchedule schedule)
         {
-            int matchCount = 0;
-            int totalFlights = schedule.FlightAssignments.Count;
+            int totalStewardAssignments = 0;
+            int matchedStewardAssignments = 0;
 
-            // If there are no flights, return 1.0 (perfect score)
-            if (totalFlights == 0)
-                return 1.0f;
-
-            foreach (var assignment in schedule.FlightAssignments)
+            foreach (var flightAssignment in schedule.FlightAssignments)
             {
-                // Only check flights that have language requirements
-                if (assignment.Flight.RequiredLanguageId.HasValue && assignment.Flight.RequiredLanguageId.Value > 0)
+                // Only process flights with language requirements
+                if (flightAssignment.Flight.RequiredLanguageId.HasValue &&
+                    flightAssignment.Flight.RequiredLanguageId.Value > 0)
                 {
-                    // Check if any assigned steward speaks the required language
-                    bool hasLanguageMatch = HasStewardWithRequiredLanguage(assignment);
+                    int requiredLanguageId = flightAssignment.Flight.RequiredLanguageId.Value;
 
-                    if (hasLanguageMatch)
-                        matchCount++;
+                    foreach (var steward in flightAssignment.BusinessStewards.Concat(flightAssignment.EconomyStewards))
+                    {
+                        totalStewardAssignments++;
+
+                        if (steward.LanguageIds.Contains(requiredLanguageId))
+                        {
+                            matchedStewardAssignments++;
+                        }
+                    }
                 }
                 else
                 {
-                    // Flights without language requirements are considered matched
-                    matchCount++;
+                    // For flights without language requirements, all stewards are considered matched
+                    totalStewardAssignments += flightAssignment.BusinessStewards.Count +
+                                             flightAssignment.EconomyStewards.Count;
+                    matchedStewardAssignments += flightAssignment.BusinessStewards.Count +
+                                               flightAssignment.EconomyStewards.Count;
                 }
             }
 
-            // Return the ratio of matches to total flights
-            return (float)matchCount / totalFlights;
-        }
-
-        private static bool HasStewardWithRequiredLanguage(FlightAssignment assignment)
-        {
-            int requiredLanguageId = assignment.Flight.RequiredLanguageId.Value;
-
-            return assignment.BusinessStewards.Any(s => s.LanguageIds.Contains(requiredLanguageId)) ||
-                   assignment.EconomyStewards.Any(s => s.LanguageIds.Contains(requiredLanguageId));
+            // Return the ratio of matched stewards to total steward assignments
+            return totalStewardAssignments == 0 ? 1.0f : (float)matchedStewardAssignments / totalStewardAssignments;
         }
 
         // Calculate how well steward quality matches flight priority
