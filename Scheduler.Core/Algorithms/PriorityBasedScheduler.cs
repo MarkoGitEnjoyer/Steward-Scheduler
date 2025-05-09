@@ -9,6 +9,8 @@ namespace Scheduler.Core.Algorithms
 {
     public class PriorityBasedScheduler
     {
+        #region Main Schedule Generation
+
         // Generate a schedule based on priority rules with strict 90-hour constraint enforcement
         public WeeklySchedule GenerateSchedule(
             List<FlightDto> flights,
@@ -16,7 +18,7 @@ namespace Scheduler.Core.Algorithms
             DateTime weekStart,
             SchedulingWeights weights)
         {
-            var schedule = InitializeSchedule(weekStart);
+            var schedule = WeeklySchedule.InitializeSchedule(weekStart);
 
             // Calculate average monthly hours for workload balancing
             float averageMonthlyHours = stewards.Count > 0 ? stewards.Average(s => s.MonthlyHours) : 0;
@@ -40,14 +42,9 @@ namespace Scheduler.Core.Algorithms
             return schedule;
         }
 
-        private WeeklySchedule InitializeSchedule(DateTime weekStart)
-        {
-            return new WeeklySchedule
-            {
-                WeekStart = weekStart,
-                WeekEnd = weekStart.AddDays(7)
-            };
-        }
+        #endregion
+
+        #region Initialization Methods
 
         private Dictionary<string, List<StewardDto>> GroupStewardsByRole(List<StewardDto> stewards)
         {
@@ -69,6 +66,10 @@ namespace Scheduler.Core.Algorithms
                 .Select(sf => sf.Flight)
                 .ToList();
         }
+
+        #endregion
+
+        #region Flight Processing
 
         private void ProcessFlight(
             FlightDto flight,
@@ -137,6 +138,39 @@ namespace Scheduler.Core.Algorithms
             }
         }
 
+        private bool EvaluateFlightAssignment(FlightAssignment flightAssignment, FlightDto flight)
+        {
+            // Always require a senior steward and at least one economy steward
+            bool hasMinimumCrew = flightAssignment.BusinessStewards.Any(s => s.IsSenior);
+
+            if (hasMinimumCrew)
+            {
+                return flightAssignment.BusinessStewards.Count >= flight.RequiredBusinessCrew &&
+                      flightAssignment.EconomyStewards.Count >= flight.RequiredEconomyCrew;
+            }
+
+            return false;
+        }
+
+        private void CleanupFailedAssignment(FlightAssignment flightAssignment, WeeklySchedule schedule, float flightTime)
+        {
+            foreach (var steward in flightAssignment.BusinessStewards.Concat(flightAssignment.EconomyStewards))
+            {
+                // Remove hours from schedule tracking
+                schedule.RemoveStewardHours(steward.StewardId, flightTime);
+
+                // Clean up schedule
+                if (schedule.StewardSchedules.ContainsKey(steward.StewardId))
+                {
+                    schedule.StewardSchedules[steward.StewardId].Remove(flightAssignment.Flight);
+                }
+            }
+        }
+
+        #endregion
+
+        #region Steward Assignment Methods
+
         private bool AssignSeniorSteward(
             FlightDto flight,
             FlightAssignment flightAssignment,
@@ -152,7 +186,7 @@ namespace Scheduler.Core.Algorithms
                 .Select(s => new
                 {
                     Steward = s,
-                    Score = CalculateStewardScore(s,schedule, flight, weights, averageMonthlyHours)
+                    Score = CalculateStewardScore(s, schedule, flight, weights, averageMonthlyHours)
                 })
                 .OrderByDescending(x => x.Score)
                 .ToList();
@@ -186,11 +220,11 @@ namespace Scheduler.Core.Algorithms
             {
                 // Find business stewards who won't exceed 90 hours and aren't senior
                 var availableBusinessStewards = businessStewards
-                    .Where(s =>  s.IsAvailableForFlight(flight, schedule))
+                    .Where(s => s.IsAvailableForFlight(flight, schedule))
                     .Select(s => new
                     {
                         Steward = s,
-                        Score = CalculateStewardScore(s,schedule, flight, weights, averageMonthlyHours)
+                        Score = CalculateStewardScore(s, schedule, flight, weights, averageMonthlyHours)
                     })
                     .OrderByDescending(x => x.Score)
                     .Take(remainingBusiness)
@@ -219,7 +253,7 @@ namespace Scheduler.Core.Algorithms
                 .Select(s => new
                 {
                     Steward = s,
-                    Score = CalculateStewardScore(s,schedule, flight, weights, averageMonthlyHours) 
+                    Score = CalculateStewardScore(s, schedule, flight, weights, averageMonthlyHours)
                 })
                 .OrderByDescending(x => x.Score)
                 .Take(flight.RequiredEconomyCrew)
@@ -249,34 +283,9 @@ namespace Scheduler.Core.Algorithms
             schedule.AddStewardHours(steward.StewardId, flightTime);
         }
 
-        private bool EvaluateFlightAssignment(FlightAssignment flightAssignment, FlightDto flight)
-        {
-            // Always require a senior steward and at least one economy steward
-            bool hasMinimumCrew = flightAssignment.BusinessStewards.Any(s => s.IsSenior);
+        #endregion
 
-            if (hasMinimumCrew)
-            {
-                return flightAssignment.BusinessStewards.Count >= flight.RequiredBusinessCrew &&
-                      flightAssignment.EconomyStewards.Count >= flight.RequiredEconomyCrew;
-            }
-
-            return false;
-        }
-
-        private void CleanupFailedAssignment(FlightAssignment flightAssignment, WeeklySchedule schedule, float flightTime)
-        {
-            foreach (var steward in flightAssignment.BusinessStewards.Concat(flightAssignment.EconomyStewards))
-            {
-                // Remove hours from schedule tracking
-                schedule.RemoveStewardHours(steward.StewardId, flightTime);
-
-                // Clean up schedule
-                if (schedule.StewardSchedules.ContainsKey(steward.StewardId))
-                {
-                    schedule.StewardSchedules[steward.StewardId].Remove(flightAssignment.Flight);
-                }
-            }
-        }
+        #region Scoring Methods
 
         // Calculate steward score for flight assignment
         private float CalculateStewardScore(StewardDto steward, WeeklySchedule schedule, FlightDto flight, SchedulingWeights weights, float averageMonthlyHours)
@@ -284,9 +293,9 @@ namespace Scheduler.Core.Algorithms
             // Load all scores
             float experienceScore = Math.Min(1.0f, steward.ExperienceYears / 10.0f);
             float feedbackScore = Math.Min(1.0f, Math.Max(0.0f, steward.FeedbackScore / 5.0f));
-            float workloadScore = CalculateWorkloadForStewad(steward, averageMonthlyHours,schedule);
+            float workloadScore = CalculateWorkloadForStewad(steward, averageMonthlyHours, schedule);
             float languageScore = steward.DoesSpeakLanguage(flight.RequiredLanguageId) ? 1.0f : 0.0f;
-            
+
             // calculate by using weights
             float qualityScore = weights.ExperienceWeight * experienceScore +
                                  weights.FeedbackWeight * feedbackScore +
@@ -329,5 +338,7 @@ namespace Scheduler.Core.Algorithms
             }
             return workloadScore;
         }
+
+        #endregion
     }
 }

@@ -24,6 +24,15 @@ namespace Scheduler.Core.Models
         // Fitness score for genetic algorithm
         public float FitnessScore { get; set; }
 
+        public static WeeklySchedule InitializeSchedule(DateTime weekStart)
+        {
+            return new WeeklySchedule
+            {
+                WeekStart = weekStart,
+                WeekEnd = weekStart.AddDays(7)
+            };
+        }
+
         #region Hour Management Methods
         /// <summary>
         /// Add hours to a steward's schedule - return success/failure

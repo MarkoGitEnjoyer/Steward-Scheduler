@@ -31,13 +31,7 @@ namespace Scheduler.Core.Algorithms
             var population = new List<WeeklySchedule>();
 
             // Generate weight variations for diversity
-            var weightVariations = SchedulingWeights.GenerateVariations(_config.PopulationSize * 2);
-
-            // Add base schedule from priority scheduler
-            var baseSchedule = GenerateBaseSchedule(flights, stewards, weekStart);
-            population.Add(baseSchedule);
-
-            Console.WriteLine($"Added base schedule with {baseSchedule.FlightAssignments.Count} flights to population");
+            var weightVariations = SchedulingWeights.GenerateVariations(_config.PopulationSize);
 
             // Generate diverse schedules with different weights
             population = GenerateDiverseSchedules(population, flights, stewards, weekStart, weightVariations);
@@ -48,16 +42,7 @@ namespace Scheduler.Core.Algorithms
             return population;
         }
 
-        private WeeklySchedule GenerateBaseSchedule(List<FlightDto> flights, List<StewardDto> stewards, DateTime weekStart)
-        {
-            // First, run priority scheduler once to get a good base schedule
-            var priorityScheduler = new PriorityBasedScheduler();
-            return priorityScheduler.GenerateSchedule(
-                flights.OrderByDescending(f => f.Priority).ToList(),
-                DeepCopyStewards(stewards),
-                weekStart,
-                new SchedulingWeights());
-        }
+        
 
         private List<WeeklySchedule> GenerateDiverseSchedules(
             List<WeeklySchedule> population,
@@ -70,7 +55,7 @@ namespace Scheduler.Core.Algorithms
             int index = 0;
 
             // For each weight variation, create a fresh copy of stewards
-            while (population.Count < _config.PopulationSize && index < weightVariations.Count)
+            while (population.Count < _config.PopulationSize)
             {
                 var weights = weightVariations[index];
                 index++;
@@ -86,16 +71,13 @@ namespace Scheduler.Core.Algorithms
 
                 // Now generate schedule with fresh stewards
                 var schedule = priorityScheduler.GenerateSchedule(
-                    flights.OrderByDescending(f => f.Priority).ToList(),
+                    flights,
                     freshStewards,
                     weekStart,
                     weights);
 
-                // Add if unique enough
-                if (!population.Any(p => AreSchedulesSimilar(p, schedule, 0.9f)))
-                {
-                    population.Add(schedule);
-                }
+                population.Add(schedule);
+                
             }
 
             Console.WriteLine($"Generated {population.Count} valid and diverse initial schedules");
@@ -168,7 +150,7 @@ namespace Scheduler.Core.Algorithms
         private WeeklySchedule TrackBestWithMostFlights(List<WeeklySchedule> population)
         {
             return population
-                .OrderByDescending(s => s.FlightAssignments.Count)
+                .OrderByDescending(s => s.FlightAssignments.Where(fl => fl.IsComplete()).Count())
                 .ThenByDescending(s => s.FitnessScore)
                 .First().Clone();
         }
@@ -196,9 +178,11 @@ namespace Scheduler.Core.Algorithms
                 noImprovementCount++;
             }
 
+            int curBestFlightAssignments = currentBest.FlightAssignments.Where(fl => fl.IsComplete()).Count();
+            int bestWithMostFlightAssignments = bestWithMostFlights.FlightAssignments.Where(fl => fl.IsComplete()).Count();
             // Update best solution with most flights if applicable
-            if (currentBest.FlightAssignments.Count > bestWithMostFlights.FlightAssignments.Count ||
-                (currentBest.FlightAssignments.Count == bestWithMostFlights.FlightAssignments.Count &&
+            if (curBestFlightAssignments > bestWithMostFlightAssignments ||
+                (curBestFlightAssignments == bestWithMostFlightAssignments &&
                  currentBest.FitnessScore > bestWithMostFlights.FitnessScore))
             {
                 bestWithMostFlights = currentBest.Clone();
@@ -287,11 +271,11 @@ namespace Scheduler.Core.Algorithms
         {
             // Also explicitly keep the solution with the most flights
             var mostFlightsSchedule = population
-                .OrderByDescending(s => s.FlightAssignments.Count)
+                .OrderByDescending(s => s.FlightAssignments.Where(fl=>fl.IsComplete()).Count())
                 .ThenByDescending(s => s.FitnessScore)
                 .First();
 
-            if (!newPopulation.Any(s => s.FlightAssignments.Count == mostFlightsSchedule.FlightAssignments.Count))
+            if (!newPopulation.Any(s => s.FlightAssignments.Where(fl => fl.IsComplete()).Count() == mostFlightsSchedule.FlightAssignments.Where(fl => fl.IsComplete()).Count()))
             {
                 newPopulation.Add(mostFlightsSchedule.Clone());
             }
@@ -393,41 +377,44 @@ namespace Scheduler.Core.Algorithms
             var bestFitness = population[0];
 
             // Get the schedule with the most flights
-            var mostFlights = population.OrderByDescending(s => s.FlightAssignments.Count)
+            var mostFlights = population.OrderByDescending(s => s.FlightAssignments.Where(fl=>fl.IsComplete()).Count())
                                       .ThenByDescending(s => s.FitnessScore)
                                       .First();
 
             // Compare the various solutions
             LogFinalSolutionComparison(bestFitness, mostFlights, bestEver, bestWithMostFlights);
 
+            var bestFitnessFlightsC = bestFitness.FlightAssignments.Where(fl => fl.IsComplete()).Count();
+            var mostFlightsFlightsC = mostFlights.FlightAssignments.Where(fl => fl.IsComplete()).Count();
+            var bestWithMostFlightsFlightsC = bestWithMostFlights.FlightAssignments.Where(fl => fl.IsComplete()).Count();
             // Fitness threshold for comparing solutions
             float fitnessThreshold = 0.95f;
 
             // Prefer the solution with more flights if the fitness difference is small
-            if (mostFlights.FlightAssignments.Count > bestFitness.FlightAssignments.Count &&
+            if (mostFlightsFlightsC > bestFitnessFlightsC &&
                 mostFlights.FitnessScore > bestFitness.FitnessScore * fitnessThreshold)
             {
-                Console.WriteLine($"Choosing schedule with more flights ({mostFlights.FlightAssignments.Count}) over best fitness");
+                Console.WriteLine($"Choosing schedule with more flights ({mostFlightsFlightsC}) over best fitness");
                 return mostFlights;
             }
 
             // If best ever solution has more flights and similar fitness, use that
-            if (bestEver.FlightAssignments.Count > bestFitness.FlightAssignments.Count &&
+            if (bestEver.FlightAssignments.Where(fl => fl.IsComplete()).Count() > bestFitnessFlightsC &&
                 bestEver.FitnessScore > bestFitness.FitnessScore * fitnessThreshold)
             {
-                Console.WriteLine($"Returning best solution ever found: {bestEver.FitnessScore:F4} ({bestEver.FlightAssignments.Count} flights)");
+                Console.WriteLine($"Returning best solution ever found: {bestEver.FitnessScore:F4} ({bestEver.FlightAssignments.Where(fl => fl.IsComplete()).Count()} flights)");
                 return bestEver;
             }
 
             // If best with most flights has significantly more flights, use that
-            if (bestWithMostFlights.FlightAssignments.Count > bestFitness.FlightAssignments.Count * 1.1 &&
+            if (bestWithMostFlightsFlightsC > bestFitness.FlightAssignments.Count * 1.1 &&
                 bestWithMostFlights.FitnessScore > bestFitness.FitnessScore * fitnessThreshold)
             {
-                Console.WriteLine($"Returning solution with most flights: {bestWithMostFlights.FitnessScore:F4} ({bestWithMostFlights.FlightAssignments.Count} flights)");
+                Console.WriteLine($"Returning solution with most flights: {bestWithMostFlights.FitnessScore:F4} ({bestWithMostFlightsFlightsC} flights)");
                 return bestWithMostFlights;
             }
 
-            Console.WriteLine($"Final best solution: Fitness={bestFitness.FitnessScore:F4}, Flights={bestFitness.FlightAssignments.Count}");
+            Console.WriteLine($"Final best solution: Fitness={bestFitness.FitnessScore:F4}, Flights={bestFitnessFlightsC}");
             return bestFitness;
         }
 
@@ -437,10 +424,10 @@ namespace Scheduler.Core.Algorithms
             WeeklySchedule bestEver,
             WeeklySchedule bestWithMostFlights)
         {
-            Console.WriteLine($"Best by fitness: Fitness={bestFitness.FitnessScore:F4}, Flights={bestFitness.FlightAssignments.Count}");
-            Console.WriteLine($"Best by most flights: Fitness={mostFlights.FitnessScore:F4}, Flights={mostFlights.FlightAssignments.Count}");
-            Console.WriteLine($"Best ever found: Fitness={bestEver.FitnessScore:F4}, Flights={bestEver.FlightAssignments.Count}");
-            Console.WriteLine($"Best with most flights: Fitness={bestWithMostFlights.FitnessScore:F4}, Flights={bestWithMostFlights.FlightAssignments.Count}");
+            Console.WriteLine($"Best by fitness: Fitness={bestFitness.FitnessScore:F4}, Flights={bestFitness.FlightAssignments.Where(fl=>fl.IsComplete()).Count()}");
+            Console.WriteLine($"Best by most flights: Fitness={mostFlights.FitnessScore:F4}, Flights={mostFlights.FlightAssignments.Where(fl => fl.IsComplete()).Count()}");
+            Console.WriteLine($"Best ever found: Fitness={bestEver.FitnessScore:F4}, Flights={bestEver.FlightAssignments.Where(fl => fl.IsComplete()).Count()}");
+            Console.WriteLine($"Best with most flights: Fitness={bestWithMostFlights.FitnessScore:F4}, Flights={bestWithMostFlights.FlightAssignments.Where(fl => fl.IsComplete()).Count()}");
         }
 
         #endregion
@@ -457,82 +444,19 @@ namespace Scheduler.Core.Algorithms
             for (int i = 0; i < tournamentSize; i++)
             {
                 int idx = _random.Next(population.Count);
-                candidates.Add(population[idx]);
-            }
-
-            // Find the candidate with the most flights
-            var maxFlights = candidates.Max(s => s.FlightAssignments.Count);
-
-            // Get candidates with flight counts close to the max
-            var bestFlightCandidates = candidates
-                .Where(s => s.FlightAssignments.Count >= maxFlights - 1)
-                .ToList();
-
-            // If we have candidates with plenty of flights, prefer those with better fitness
-            if (bestFlightCandidates.Count > 0)
-            {
-                return bestFlightCandidates.OrderByDescending(s => s.FitnessScore).First();
-            }
-
-            // Fall back to standard fitness-based selection
-            return candidates.OrderByDescending(s => s.FitnessScore).First();
-        }
-
-        // Check if two schedules are very similar (to maintain diversity)
-        private bool AreSchedulesSimilar(WeeklySchedule schedule1, WeeklySchedule schedule2, float similarityThreshold)
-        {
-            int matchingAssignments = 0;
-            int totalAssignments = schedule1.FlightAssignments.Count;
-
-            if (totalAssignments == 0 || schedule2.FlightAssignments.Count == 0)
-                return false;
-
-            foreach (var assignment1 in schedule1.FlightAssignments)
-            {
-                var assignment2 = schedule2.FlightAssignments
-                    .FirstOrDefault(a => a.Flight.FlightId == assignment1.Flight.FlightId);
-
-                if (assignment2 != null && AreAssignmentsSimilar(assignment1, assignment2))
+                if (!candidates.Any(candidate => object.ReferenceEquals(candidate, population[idx])))
                 {
-                    matchingAssignments++;
+                    candidates.Add(population[idx]);
                 }
             }
 
-            float similarity = (float)matchingAssignments / totalAssignments;
-            return similarity >= similarityThreshold;
-        }
-
-        private bool AreAssignmentsSimilar(FlightAssignment assignment1, FlightAssignment assignment2)
-        {
-            // Check business stewards
-            bool businessMatch = assignment1.BusinessStewards
-                .Select(s => s.StewardId)
-                .OrderBy(id => id)
-                .SequenceEqual(
-                    assignment2.BusinessStewards
-                    .Select(s => s.StewardId)
-                    .OrderBy(id => id));
-
-            // Check economy stewards
-            bool economyMatch = assignment1.EconomyStewards
-                .Select(s => s.StewardId)
-                .OrderBy(id => id)
-                .SequenceEqual(
-                    assignment2.EconomyStewards
-                    .Select(s => s.StewardId)
-                    .OrderBy(id => id));
-
-            return businessMatch && economyMatch;
+            return candidates.OrderByDescending(s => s.FitnessScore).First();
         }
 
         // Crossover operator with constraint preservation
         private WeeklySchedule Crossover(WeeklySchedule parent1, WeeklySchedule parent2)
         {
-            var child = new WeeklySchedule
-            {
-                WeekStart = parent1.WeekStart,
-                WeekEnd = parent1.WeekEnd
-            };
+            var child = WeeklySchedule.InitializeSchedule(parent1.WeekStart);
 
             // Create steward schedule tracking for validation during construction
             Dictionary<int, List<FlightDto>> tempStewardSchedules = new Dictionary<int, List<FlightDto>>();
@@ -541,19 +465,36 @@ namespace Scheduler.Core.Algorithms
             // Initialize steward hour tracking
             InitializeHourTracking(parent1, parent2, stewardHours);
 
-            // First, add high-priority flights
-            AddHighPriorityFlights(parent1, parent2, child, tempStewardSchedules, stewardHours);
+            // Get all unique flight IDs from both parents
+            var allFlightIds = parent1.FlightAssignments
+                .Select(fa => fa.Flight.FlightId)
+                .Union(parent2.FlightAssignments.Select(fa => fa.Flight.FlightId))
+                .Distinct()
+                .ToList();
 
-            // Handle remaining flights
-            AddRemainingFlights(parent1, parent2, child, tempStewardSchedules, stewardHours);
+            // Process all flights
+            foreach (var flightId in allFlightIds)
+            {
+                var parent1Assignment = parent1.FlightAssignments
+                    .FirstOrDefault(fa => fa.Flight.FlightId == flightId);
 
-            // Rebuild steward schedules from our temp tracking
+                var parent2Assignment = parent2.FlightAssignments
+                    .FirstOrDefault(fa => fa.Flight.FlightId == flightId);
+
+                // Select which parent to use for this flight
+                var sourceAssignment = SelectSourceAssignment(parent1, parent2, parent1Assignment, parent2Assignment);
+
+                if (sourceAssignment != null)
+                {
+                    TryAddFlightAssignment(sourceAssignment, child, tempStewardSchedules, stewardHours);
+                }
+            }
+
             child.StewardSchedules = tempStewardSchedules;
             child.StewardHours = stewardHours;
 
             return child;
         }
-
         private void InitializeHourTracking(WeeklySchedule parent1, WeeklySchedule parent2, Dictionary<int, float> stewardHours)
         {
             foreach (var assignment in parent1.FlightAssignments.Concat(parent2.FlightAssignments))
@@ -568,47 +509,11 @@ namespace Scheduler.Core.Algorithms
             }
         }
 
-        private void AddHighPriorityFlights(
-            WeeklySchedule parent1,
-            WeeklySchedule parent2,
-            WeeklySchedule child,
-            Dictionary<int, List<FlightDto>> tempStewardSchedules,
-            Dictionary<int, float> stewardHours)
-        {
-            var highPriorityFlights = new HashSet<int>();
-
-            // Process parent1 high priority flights first
-            ProcessHighPriorityFlightsFromParent(parent1, child, tempStewardSchedules, stewardHours, highPriorityFlights);
-
-            // Then add high priority flights from parent2 that aren't already added
-            ProcessHighPriorityFlightsFromParent(parent2, child, tempStewardSchedules, stewardHours, highPriorityFlights);
-        }
-
-        private void ProcessHighPriorityFlightsFromParent(
-            WeeklySchedule parent,
-            WeeklySchedule child,
-            Dictionary<int, List<FlightDto>> tempStewardSchedules,
-            Dictionary<int, float> stewardHours,
-            HashSet<int> highPriorityFlights)
-        {
-            foreach (var assignment in parent.FlightAssignments.OrderByDescending(fa => fa.Flight.Priority))
-            {
-                bool isHighPriority = assignment.Flight.Priority >= 4;
-                bool notProcessed = !highPriorityFlights.Contains(assignment.Flight.FlightId);
-
-                if (isHighPriority && notProcessed)
-                {
-                    TryAddFlightAssignment(assignment, child, tempStewardSchedules, stewardHours, highPriorityFlights);
-                }
-            }
-        }
-
         private void TryAddFlightAssignment(
-            FlightAssignment parentAssignment,
-            WeeklySchedule child,
-            Dictionary<int, List<FlightDto>> tempStewardSchedules,
-            Dictionary<int, float> stewardHours,
-            HashSet<int> processedFlights)
+           FlightAssignment parentAssignment,
+           WeeklySchedule child,
+           Dictionary<int, List<FlightDto>> tempStewardSchedules,
+           Dictionary<int, float> stewardHours)
         {
             var newAssignment = new FlightAssignment { Flight = parentAssignment.Flight };
             bool validAssignment = true;
@@ -633,19 +538,18 @@ namespace Scheduler.Core.Algorithms
             }
 
             // Only add if assignment has minimum required crew
-            if (validAssignment && newAssignment.HasSeniorSteward && newAssignment.EconomyStewards.Any())
+            if (validAssignment && newAssignment.IsComplete())
             {
                 child.FlightAssignments.Add(newAssignment);
-                processedFlights.Add(parentAssignment.Flight.FlightId);
             }
         }
 
         private bool TryAddStewardsToAssignment(
-            List<StewardDto> sourceStewards,
-            List<StewardDto> targetStewards,
-            FlightDto flight,
-            Dictionary<int, List<FlightDto>> tempStewardSchedules,
-            Dictionary<int, float> stewardHours)
+          List<StewardDto> sourceStewards,
+          List<StewardDto> targetStewards,
+          FlightDto flight,
+          Dictionary<int, List<FlightDto>> tempStewardSchedules,
+          Dictionary<int, float> stewardHours)
         {
             foreach (var steward in sourceStewards)
             {
@@ -673,80 +577,31 @@ namespace Scheduler.Core.Algorithms
             return true;
         }
 
-        private void AddRemainingFlights(
-            WeeklySchedule parent1,
-            WeeklySchedule parent2,
-            WeeklySchedule child,
-            Dictionary<int, List<FlightDto>> tempStewardSchedules,
-            Dictionary<int, float> stewardHours)
-        {
-            // Find all remaining flight IDs from both parents
-            var processedFlights = child.FlightAssignments.Select(fa => fa.Flight.FlightId).ToHashSet();
-
-            var allFlightIds = parent1.FlightAssignments
-                .Select(fa => fa.Flight.FlightId)
-                .Union(parent2.FlightAssignments.Select(fa => fa.Flight.FlightId))
-                .Distinct()
-                .Except(processedFlights)
-                .ToList();
-
-            // Handle all remaining flights
-            foreach (var flightId in allFlightIds)
-            {
-                var parent1Assignment = parent1.FlightAssignments
-                    .FirstOrDefault(fa => fa.Flight.FlightId == flightId);
-
-                var parent2Assignment = parent2.FlightAssignments
-                    .FirstOrDefault(fa => fa.Flight.FlightId == flightId);
-
-                // Select which parent to use for this flight
-                var sourceAssignment = SelectSourceAssignment(parent1, parent2, parent1Assignment, parent2Assignment);
-
-                if (sourceAssignment != null)
-                {
-                    TryAddFlightAssignment(sourceAssignment, child, tempStewardSchedules, stewardHours, new HashSet<int>());
-                }
-            }
-        }
-
         private FlightAssignment SelectSourceAssignment(
-            WeeklySchedule parent1,
-            WeeklySchedule parent2,
-            FlightAssignment parent1Assignment,
-            FlightAssignment parent2Assignment)
+           WeeklySchedule parent1,
+           WeeklySchedule parent2,
+           FlightAssignment parent1Assignment,
+           FlightAssignment parent2Assignment)
         {
-            // Randomly choose which parent to inherit from, but bias toward the parent with more flights
-            bool useParent1 = _random.NextDouble() < 0.5;
+            // Determine bias based on fitness scores
+            double bias;
+            if (parent1.FitnessScore > parent2.FitnessScore)
+                bias = 0.7;
+            else if (parent2.FitnessScore > parent1.FitnessScore)
+                bias = 0.3;
+            else
+                bias = 0.5;
 
-            // Adjust bias based on which parent has more flights
-            if (parent1.FlightAssignments.Count > parent2.FlightAssignments.Count)
-            {
-                useParent1 = _random.NextDouble() < 0.7; // 70% chance to use parent1
-            }
-            else if (parent2.FlightAssignments.Count > parent1.FlightAssignments.Count)
-            {
-                useParent1 = _random.NextDouble() < 0.3; // 30% chance to use parent1
-            }
+            bool useParent1 = _random.NextDouble() < bias;
 
-            if (useParent1 && parent1Assignment != null)
-            {
-                return parent1Assignment;
-            }
-            else if (!useParent1 && parent2Assignment != null)
-            {
-                return parent2Assignment;
-            }
-            else if (parent1Assignment != null)
-            {
-                return parent1Assignment;
-            }
-            else if (parent2Assignment != null)
-            {
-                return parent2Assignment;
-            }
+            // Try to return the chosen parent's assignment, fallback to the other if null
+            FlightAssignment chosen = useParent1 ? parent1Assignment : parent2Assignment;
+            if (chosen != null)
+                return chosen;
 
-            return null;
+            return useParent1 ? parent2Assignment : null;
         }
+
 
         // Mutation operator with constraint preservation
         private WeeklySchedule Mutate(WeeklySchedule schedule, List<FlightDto> allFlights,
