@@ -8,6 +8,8 @@ namespace Scheduler.Core.Algorithms
 {
     public class GeneticScheduler
     {
+        #region Constructor and Fields
+
         private readonly Random _random = new Random();
         private readonly GeneticAlgorithmConfig _config;
 
@@ -15,6 +17,10 @@ namespace Scheduler.Core.Algorithms
         {
             _config = config ?? new GeneticAlgorithmConfig();
         }
+
+        #endregion
+
+        #region Initial Population Generation
 
         // Generate initial population using different weight configurations
         public List<WeeklySchedule> GenerateInitialPopulation(
@@ -104,6 +110,10 @@ namespace Scheduler.Core.Algorithms
                 Console.WriteLine($"Fitness: {schedule.FitnessScore}, Flights: {schedule.FlightAssignments.Count}");
             }
         }
+
+        #endregion
+
+        #region Main Optimization Process
 
         // Run the genetic algorithm
         public WeeklySchedule OptimizeSchedule(
@@ -221,6 +231,10 @@ namespace Scheduler.Core.Algorithms
                 Console.WriteLine($"Gen {generation}: Best={population[0].FitnessScore:F4}, Avg={averageFitness:F4}, Flights={population[0].FlightAssignments.Count}");
             }
         }
+
+        #endregion
+
+        #region Population Evolution
 
         private List<WeeklySchedule> CreateNewGeneration(
             List<WeeklySchedule> population,
@@ -428,6 +442,8 @@ namespace Scheduler.Core.Algorithms
             Console.WriteLine($"Best ever found: Fitness={bestEver.FitnessScore:F4}, Flights={bestEver.FlightAssignments.Count}");
             Console.WriteLine($"Best with most flights: Fitness={bestWithMostFlights.FitnessScore:F4}, Flights={bestWithMostFlights.FlightAssignments.Count}");
         }
+
+        #endregion
 
         #region Genetic Operations
 
@@ -1410,6 +1426,7 @@ namespace Scheduler.Core.Algorithms
 
             return copies;
         }
+
         #endregion
     }
 }

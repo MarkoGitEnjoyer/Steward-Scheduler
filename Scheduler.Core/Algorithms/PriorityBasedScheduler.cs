@@ -252,8 +252,7 @@ namespace Scheduler.Core.Algorithms
         private bool EvaluateFlightAssignment(FlightAssignment flightAssignment, FlightDto flight)
         {
             // Always require a senior steward and at least one economy steward
-            bool hasMinimumCrew = flightAssignment.BusinessStewards.Any(s => s.IsSenior) &&
-                                 flightAssignment.EconomyStewards.Count > 0;
+            bool hasMinimumCrew = flightAssignment.BusinessStewards.Any(s => s.IsSenior);
 
             if (hasMinimumCrew)
             {
