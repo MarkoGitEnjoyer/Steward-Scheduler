@@ -63,28 +63,54 @@ namespace Scheduler.Core.Utils
             if (allStewards.Count == 0)
                 return 0;
 
-            // Calculate standard deviation of hours for active stewards
-            float balanceScore = CalculateHoursBalanceScore(schedule);
+            // Calculate standard deviation of hours for ALL stewards, not just active ones
+            float balanceScore = CalculateHoursBalanceScoreForAllStewards(schedule, allStewards);
 
-            return balanceScore;
+            // Add penalty for stewards with zero hours
+            float inclusionScore = CalculateInclusionScore(schedule, allStewards);
+
+            // Combined score with emphasis on including all stewards
+            return (balanceScore * 0.7f) + (inclusionScore * 0.3f);
         }
-       
-        private static float CalculateHoursBalanceScore(WeeklySchedule schedule)
-        {
-            // Get hours for all active stewards (those with hours in the current schedule)
-            var activeHours = schedule.StewardHours.Values.ToList();
 
-            if (activeHours.Count == 0)
-                return 0;
+        private static float CalculateHoursBalanceScoreForAllStewards(WeeklySchedule schedule, List<StewardDto> allStewards)
+        {
+            // Create dictionary of total hours (monthly + scheduled) for ALL stewards
+            var allStewardHours = new List<float>();
+
+            foreach (var steward in allStewards)
+            {
+                float scheduledHours = schedule.GetStewardScheduledHours(steward.StewardId);
+                float totalHours = steward.MonthlyHours + scheduledHours;
+                allStewardHours.Add(totalHours);
+            }
 
             // Calculate standard deviation
-            float avgHours = activeHours.Average();
-            float sumSquaredDiff = activeHours.Sum(h => (h - avgHours) * (h - avgHours));
-            float stdDev = (float)Math.Sqrt(sumSquaredDiff / activeHours.Count);
+            float avgHours = allStewardHours.Average();
+            float sumSquaredDiff = allStewardHours.Sum(h => (h - avgHours) * (h - avgHours));
+            float stdDev = (float)Math.Sqrt(sumSquaredDiff / allStewardHours.Count);
 
             // Convert to a 0-1 score (lower std dev is better)
             float maxStdDev = 20.0f;
             return Math.Max(0, 1 - (stdDev / maxStdDev));
+        }
+
+        private static float CalculateInclusionScore(WeeklySchedule schedule, List<StewardDto> allStewards)
+        {
+            // Count stewards who have at least one flight assigned
+            int stewardsWithFlights = 0;
+
+            foreach (var steward in allStewards)
+            {
+                if (schedule.StewardHours.ContainsKey(steward.StewardId) &&
+                    schedule.StewardHours[steward.StewardId] > 0)
+                {
+                    stewardsWithFlights++;
+                }
+            }
+
+            // Return ratio of stewards with flights to total stewards
+            return (float)stewardsWithFlights / allStewards.Count;
         }
 
         // Calculate how well language requirements are met
