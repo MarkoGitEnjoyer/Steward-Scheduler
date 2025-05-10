@@ -36,18 +36,11 @@ namespace Scheduler.Core.Services
 
             Console.WriteLine($"Generating schedule with {stewards.Count} stewards and {flights.Count} flights.");
 
-            // Generate initial schedule using priority-based scheduler
-            var initialSchedule = GenerateInitialSchedule(flights, stewards, weekStart);
-
-            // Report on initial schedule
-            var initialFlightCount = initialSchedule.FlightAssignments.Count;
-            Console.WriteLine($"Initial schedule has {initialFlightCount} flights scheduled.");
-
-            // Optimize the schedule using genetic algorithm
-            var optimizedSchedule = OptimizeSchedule(flights, stewards, weekStart, initialSchedule);
+            // Generate schedule using genetic algorithm directly
+            var optimizedSchedule = GenerateScheduleWithGA(flights, stewards, weekStart);
 
             // Report final stats
-            ReportScheduleStats(initialFlightCount, optimizedSchedule);
+            Console.WriteLine($"Final schedule: {optimizedSchedule.FlightAssignments.Where(fl => fl.IsComplete()).Count()} flights scheduled");
 
             return optimizedSchedule;
         }
@@ -62,45 +55,16 @@ namespace Scheduler.Core.Services
             return date;
         }
 
-        private WeeklySchedule GenerateInitialSchedule(
+        private WeeklySchedule GenerateScheduleWithGA(
             List<FlightDto> flights,
             List<StewardDto> stewards,
             DateTime weekStart)
         {
-            // Run the priority-based scheduler first
-            var priorityScheduler = new PriorityBasedScheduler();
-            return priorityScheduler.GenerateSchedule(
-                flights,
-                stewards,
-                weekStart,
-                new SchedulingWeights());
-        }
-
-
-        private WeeklySchedule OptimizeSchedule(
-            List<FlightDto> flights,
-            List<StewardDto> stewards,
-            DateTime weekStart,
-            WeeklySchedule initialSchedule)
-        {
-            // Run the genetic scheduler to refine the schedule
+            // Run the genetic scheduler directly
             var geneticConfig = new GeneticAlgorithmConfig();
-
             var geneticScheduler = new GeneticScheduler(geneticConfig);
-            var schedule = geneticScheduler.OptimizeSchedule(flights, stewards, weekStart);
-
-            return schedule;
+            return geneticScheduler.OptimizeSchedule(flights, stewards, weekStart);
         }
-
-        private void ReportScheduleStats(int initialFlightCount, WeeklySchedule finalSchedule)
-        {
-            Console.WriteLine($"Initial schedule: {initialFlightCount} flights");
-            Console.WriteLine($"Final schedule: {finalSchedule.FlightAssignments.Where(fl=>fl.IsComplete()).Count()} flights");
-            Console.WriteLine($"Improvement: {finalSchedule.FlightAssignments.Where(fl => fl.IsComplete()).Count() - initialFlightCount} additional flights scheduled");
-        }
-
-        
-
 
         // Save a generated schedule to the database
         public async Task<bool> SaveScheduleAsync(WeeklySchedule schedule)
@@ -112,7 +76,7 @@ namespace Scheduler.Core.Services
                 int scheduleYear = schedule.WeekStart.Year;
 
                 Console.WriteLine($"Validating schedule for month: {scheduleYear}-{scheduleMonth}");
-                Console.WriteLine($"Schedule contains {schedule.FlightAssignments.Count} flight assignments");
+                Console.WriteLine($"Schedule contains {schedule.FlightAssignments.Where(fl=>fl.IsComplete()).Count()} flight assignments");
 
                 // Track additional hours for each steward
                 var additionalHours = CalculateAdditionalHours(schedule, scheduleMonth, scheduleYear);
@@ -174,14 +138,24 @@ namespace Scheduler.Core.Services
                             $"Economy: {flightAssignment.EconomyStewards.Count}");
         }
 
-
         private async Task ClearAndCreateNewAssignments(WeeklySchedule schedule)
         {
-            // Clear existing assignments
-            var flightIds = schedule.FlightAssignments.Select(fa => fa.Flight.FlightId).ToList();
+            // Clear all existing assignments for the week
+            var weekStart = schedule.WeekStart;
+            var weekEnd = schedule.WeekEnd;
 
-            Console.WriteLine($"Clearing {flightIds.Count} existing flight assignments...");
-            var existingAssignments = await _unitOfWork.Assignments.FindAsync(a => flightIds.Contains(a.FlightId));
+            Console.WriteLine($"Clearing all existing flight assignments for the week {weekStart:yyyy-MM-dd} to {weekEnd:yyyy-MM-dd}...");
+
+            // Get all flights for the week
+            var weeklyFlights = await _unitOfWork.Flights.FindAsync(f =>
+                f.DepartureTime >= weekStart && f.DepartureTime < weekEnd);
+
+            var weeklyFlightIds = weeklyFlights.Select(f => f.FlightId).ToList();
+
+            Console.WriteLine($"Found {weeklyFlightIds.Count} flights for the week");
+
+            // Get and remove all assignments for these flights
+            var existingAssignments = await _unitOfWork.Assignments.FindAsync(a => weeklyFlightIds.Contains(a.FlightId));
 
             Console.WriteLine($"Found {existingAssignments.Count()} existing assignments to remove");
             foreach (var assignment in existingAssignments)
