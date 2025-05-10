@@ -17,6 +17,10 @@
             <div><strong>Aircraft:</strong> @Flight.Flight.AircraftType</div>
         </div>
     </div>
+    <div class="flight-priority">
+        <strong>Priority:</strong>
+        <span class="badge bg-primary ms-2">@Flight.Flight.Priority</span>
+    </div>
     @if (!IsCompact)
     {
         <div class="crew-details">
@@ -71,23 +75,23 @@
         flex: 1;
     }
 
-    .flight-card.complete {
-        background-color: #d1e7dd;
-        border-color: #a3cfbb;
-    }
+        .flight-card.complete {
+            background-color: #d1e7dd;
+            border-color: #a3cfbb;
+        }
 
-    .flight-card.incomplete {
-        background-color: #fff3cd;
-        border-color: #ffe69c;
-    }
+        .flight-card.incomplete {
+            background-color: #fff3cd;
+            border-color: #ffe69c;
+        }
 
-    .flight-card.outbound {
-        border-left: 5px solid #0d6efd;
-    }
+        .flight-card.outbound {
+            border-left: 5px solid #0d6efd;
+        }
 
-    .flight-card.single {
-        border-left: 5px solid #6c757d;
-    }
+        .flight-card.single {
+            border-left: 5px solid #6c757d;
+        }
 
     .flight-header {
         display: flex;
@@ -115,6 +119,10 @@
         min-width: 200px;
     }
 
+    .flight-priority {
+        margin-bottom: 1rem;
+    }
+
     .crew-details {
         display: flex;
         flex-wrap: wrap;
@@ -133,9 +141,9 @@
         font-size: 0.875rem;
     }
 
-    .crew-list li {
-        margin-bottom: 0.25rem;
-    }
+        .crew-list li {
+            margin-bottom: 0.25rem;
+        }
 
     /* Compact mode styles */
     .compact .flight-card {

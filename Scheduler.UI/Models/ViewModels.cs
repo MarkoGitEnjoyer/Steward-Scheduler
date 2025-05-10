@@ -71,11 +71,13 @@ namespace Scheduler.UI.Models
         public string AircraftType { get; set; } = string.Empty;
         public string Destination { get; set; } = string.Empty;
         public int? RequiredLanguageId { get; set; }
+        public string RequiredLanguageName { get; set; } = string.Empty;
         public float FlightTime { get; set; }
         public int Priority { get; set; }
         public int RequiredBusinessCrew { get; set; }
         public int RequiredEconomyCrew { get; set; }
         public bool IsFullyAssigned { get; set; }
+        public bool StewardSpeaksLanguage { get; set; }
     }
 
     public class FlightAssignmentViewModel
@@ -100,6 +102,7 @@ namespace Scheduler.UI.Models
         public float ExperienceYears { get; set; }
         public int PositiveFeedbackCount { get; set; }
         public int NegativeFeedbackCount { get; set; }
+        public List<int> LanguageIds { get; set; } = new();
         public List<string> Languages { get; set; } = new();
         public List<string> Licenses { get; set; } = new();
         public List<FlightViewModel> ScheduledFlights { get; set; } = new();

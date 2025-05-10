@@ -162,6 +162,8 @@
                             <th>Arrival</th>
                             <th>Destination</th>
                             <th>Aircraft</th>
+                            <th>Priority</th>
+                            <th>Language</th>
                             <th>Flight Time</th>
                         </tr>
                     </thead>
@@ -175,6 +177,29 @@
                                 <td>@flight.ArrivalTime.ToString("HH:mm")</td>
                                 <td>@flight.Destination</td>
                                 <td>@flight.AircraftType</td>
+                                <td>
+                                    <span class="badge bg-primary">@flight.Priority</span>
+                                </td>
+                                <td>
+                                    @if (flight.RequiredLanguageId.HasValue)
+                                    {
+                                        <span class="language-info">
+                                            @flight.RequiredLanguageName
+                                            @if (flight.StewardSpeaksLanguage)
+                                            {
+                                                <span class="badge bg-success ms-1"><i class="oi oi-check"></i> Speaks</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge bg-danger ms-1"><i class="oi oi-x"></i> Does not speak</span>
+                                            }
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">None required</span>
+                                    }
+                                </td>
                                 <td>@flight.FlightTime hrs</td>
                             </tr>
                         }
@@ -224,12 +249,16 @@
                                                     var isStartHour = flight.DepartureTime.Hour == hour &&
                                                     flight.DepartureTime.Day == currentDay.Day;
 
-                                                    <div class="flight-block @(isStartHour ? "flight-departure" : "flight-ongoing")">
+                                                    <div class="flight-block @(isStartHour ? "flight-departure" : "flight-ongoing") @(!flight.StewardSpeaksLanguage && flight.RequiredLanguageId.HasValue ? "flight-language-mismatch" : "")">
                                                         @if (isStartHour)
                                                         {
                                                             <div class="flight-time">@flight.DepartureTime.ToString("HH:mm")</div>
                                                             <div class="flight-number">@flight.FlightNumber</div>
                                                             <div class="flight-destination">to @flight.Destination</div>
+                                                            @if (!flight.StewardSpeaksLanguage && flight.RequiredLanguageId.HasValue)
+                                                            {
+                                                                <div class="language-warning"><i class="oi oi-warning"></i> Language mismatch!</div>
+                                                            }
                                                         }
                                                         else
                                                         {
@@ -283,6 +312,11 @@ else if (!model.IsLoading && selectedStewardId > 0)
         border-left: 4px solid #6c757d;
     }
 
+    .flight-language-mismatch {
+        background-color: #ffecb5;
+        border-left: 4px solid #ffc107;
+    }
+
     .flight-time {
         font-weight: bold;
     }
@@ -301,6 +335,12 @@ else if (!model.IsLoading && selectedStewardId > 0)
     .flight-in-progress {
         font-style: italic;
         font-size: 0.75rem;
+    }
+
+    .language-warning {
+        font-size: 0.7rem;
+        color: #dc3545;
+        margin-top: 2px;
     }
 </style>
 

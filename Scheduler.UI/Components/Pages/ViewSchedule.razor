@@ -15,7 +15,7 @@
             <button class="btn btn-primary" @onclick="LoadSchedule">Load</button>
         </div>
     </div>
-    
+
     <div class="col-md-8 text-end">
         <div class="btn-group">
             <button class="btn btn-outline-primary" @onclick="PreviousWeek">
@@ -64,13 +64,13 @@
                             @onclick="() => viewMode = vday">
                         Day View
                     </button>
-                    <button class="btn @(viewMode == "list" ? "btn-primary" : "btn-outline-primary")" 
+                    <button class="btn @(viewMode == "list" ? "btn-primary" : "btn-outline-primary")"
                             @onclick="() => viewMode = vlist">
                         List View
                     </button>
                 </div>
             </div>
-            
+
             @if (viewMode == "day")
             {
                 <div class="row mb-3">
@@ -81,7 +81,7 @@
                                 var day = model.WeekStart.AddDays(i);
                                 var isActive = selectedDay.Date == day.Date;
                                 int dayIndex = i; // Capture for lambda
-                                
+
                                 <button class="btn @(isActive ? "btn-primary" : "btn-outline-primary")"
                                         @onclick="() => SelectDay(dayIndex)">
                                     @day.ToString("ddd")<br />
@@ -91,15 +91,15 @@
                         </div>
                     </div>
                 </div>
-                
+
                 <h4>Flights on @selectedDay.ToString("dddd, MMMM d, yyyy")</h4>
-                
-                
-                    var flightsForDay = model.FlightAssignments
-                        .Where(fa => fa.Flight.DepartureTime.Date == selectedDay.Date)
-                        .ToList();
-                
-                
+
+
+                var flightsForDay = model.FlightAssignments
+                .Where(fa => fa.Flight.DepartureTime.Date == selectedDay.Date)
+                .ToList();
+
+
                 @if (flightsForDay.Any())
                 {
                     <div class="table-responsive">
@@ -111,6 +111,7 @@
                                     <th>Destination</th>
                                     <th>Aircraft</th>
                                     <th>Duration</th>
+                                    <th>Priority</th>
                                     <th>Business Class</th>
                                     <th>Economy Class</th>
                                     <th>Status</th>
@@ -128,6 +129,9 @@
                                         <td>@flight.Flight.Destination</td>
                                         <td>@flight.Flight.AircraftType</td>
                                         <td>@flight.Flight.FlightTime hours</td>
+                                        <td>
+                                            <span class="badge bg-primary">@flight.Flight.Priority</span>
+                                        </td>
                                         <td>
                                             @if (flight.BusinessStewards.Any())
                                             {
@@ -201,51 +205,46 @@
                 <div class="mb-3">
                     <div class="input-group">
                         <span class="input-group-text">Filter</span>
-                        <input type="text" class="form-control" placeholder="Flight number, destination, aircraft..." 
+                        <input type="text" class="form-control" placeholder="Flight number, destination, aircraft..."
                                @bind="filterText" @bind:event="oninput" />
                     </div>
                 </div>
-                
+
                 <div class="table-responsive">
                     <table class="table table-striped table-hover">
                         <thead>
                             <tr>
                                 <th>
-                                    <button class="btn btn-sm btn-link" @onclick="@(() => SortBy("flightNumber"))">
-                                        Flight #
-                                        <SortIndicator Field="flightNumber" CurrentSort="@sortField" Direction="@sortDirection" />
-                                    </button>
+                                    
+                                        Flight 
+                                        
                                 </th>
                                 <th>
-                                    <button class="btn btn-sm btn-link" @onclick="@(() => SortBy("departure"))">
+                                   
                                         Departure
-                                        <SortIndicator Field="departure" CurrentSort="@sortField" Direction="@sortDirection" />
-                                    </button>
+                                        
                                 </th>
                                 <th>
-                                    <button class="btn btn-sm btn-link" @onclick="@(() => SortBy("destination"))">
+                                   
                                         Destination
-                                        <SortIndicator Field="destination" CurrentSort="@sortField" Direction="@sortDirection" />
-                                    </button>
+                                      
                                 </th>
                                 <th>
-                                    <button class="btn btn-sm btn-link" @onclick="@(() => SortBy("aircraft"))">
+                                   
                                         Aircraft
-                                        <SortIndicator Field="aircraft" CurrentSort="@sortField" Direction="@sortDirection" />
-                                    </button>
+                                       
                                 </th>
                                 <th>
-                                    <button class="btn btn-sm btn-link" @onclick="@(() => SortBy("priority"))">
+                                 
                                         Priority
-                                        <SortIndicator Field="priority" CurrentSort="@sortField" Direction="@sortDirection" />
-                                    </button>
+                                
                                 </th>
                                 <th>Crew Status</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
-                            @foreach (var assignment in filteredAndSortedAssignments)
+                            @foreach (var assignment in model.FlightAssignments)
                             {
                                 <tr>
                                     <td>@assignment.Flight.FlightNumber</td>
@@ -253,14 +252,7 @@
                                     <td>@assignment.Flight.Destination</td>
                                     <td>@assignment.Flight.AircraftType</td>
                                     <td>
-                                        @for (int i = 0; i < assignment.Flight.Priority; i++)
-                                        {
-                                            <i class="oi oi-star"></i>
-                                        }
-                                        @for (int i = assignment.Flight.Priority; i < 5; i++)
-                                        {
-                                            <i class="oi oi-star text-muted"></i>
-                                        }
+                                        <span class="badge bg-primary">@assignment.Flight.Priority</span>
                                     </td>
                                     <td>
                                         @if (assignment.IsComplete)
@@ -284,7 +276,7 @@
                 </div>
             }
         }
-        
+
         @if (!string.IsNullOrEmpty(model.ErrorMessage))
         {
             <div class="alert alert-danger mt-3">
@@ -335,17 +327,14 @@
                                 <tr>
                                     <th>Priority</th>
                                     <td>
-                                        @for (int i = 0; i < selectedFlight.Flight.Priority; i++)
-                                        {
-                                            <i class="oi oi-star"></i>
-                                        }
+                                        <span class="badge bg-primary">@selectedFlight.Flight.Priority</span>
                                     </td>
                                 </tr>
                             </table>
                         </div>
                         <div class="col-md-6">
                             <h6>Assigned Crew</h6>
-                            
+
                             <h6 class="mt-3">Business Class (@selectedFlight.BusinessStewards.Count/@selectedFlight.Flight.RequiredBusinessCrew)</h6>
                             @if (selectedFlight.BusinessStewards.Any())
                             {
@@ -366,7 +355,7 @@
                             {
                                 <p class="text-muted">No business class stewards assigned</p>
                             }
-                            
+
                             <h6 class="mt-3">Economy Class (@selectedFlight.EconomyStewards.Count/@selectedFlight.Flight.RequiredEconomyCrew)</h6>
                             @if (selectedFlight.EconomyStewards.Any())
                             {
@@ -416,16 +405,13 @@
     private string sortField = "departure";
     private string sortDirection = "asc";
     private FlightAssignmentViewModel? selectedFlight;
-    
-    private IEnumerable<FlightAssignmentViewModel> filteredAndSortedAssignments => 
-        FilterAndSortAssignments(model.FlightAssignments);
 
     protected override async Task OnInitializedAsync()
     {
         // Set selected date to current week's Monday
         AdjustSelectedDateToMonday();
         selectedDay = selectedDate;
-        
+
         await LoadSchedule();
     }
 
@@ -439,7 +425,7 @@
     {
         // Load the schedule for the selected week using the controller
         model = await ScheduleController.GetScheduleForWeekAsync(selectedDate);
-        
+
         // If schedule loaded successfully, set selected day to first day with flights
         if (model.FlightAssignments.Any())
         {
@@ -454,14 +440,14 @@
             }
         }
     }
-    
+
     private void PreviousWeek()
     {
         selectedDate = selectedDate.AddDays(-7);
         selectedDay = selectedDate;
         LoadSchedule();
     }
-    
+
     private void CurrentWeek()
     {
         selectedDate = new DateTime(2025, 2, 17);
@@ -469,94 +455,27 @@
         selectedDay = selectedDate;
         LoadSchedule();
     }
-    
+
     private void NextWeek()
     {
         selectedDate = selectedDate.AddDays(7);
         selectedDay = selectedDate;
         LoadSchedule();
     }
-    
+
     private void SelectDay(int dayIndex)
     {
         selectedDay = model.WeekStart.AddDays(dayIndex);
     }
-    
+
     private void ShowFlightDetails(FlightAssignmentViewModel flight)
     {
         selectedFlight = flight;
     }
-    
+
     private void CloseFlightDetails()
     {
         selectedFlight = null;
     }
-    
-    private void SortBy(string field)
-    {
-        if (sortField == field)
-        {
-            // Toggle sort direction
-            sortDirection = sortDirection == "asc" ? "desc" : "asc";
-        }
-        else
-        {
-            // New field, set to ascending by default
-            sortField = field;
-            sortDirection = "asc";
-        }
-    }
-    
-    private IEnumerable<FlightAssignmentViewModel> FilterAndSortAssignments(IEnumerable<FlightAssignmentViewModel> assignments)
-    {
-        // Filter
-        if (!string.IsNullOrWhiteSpace(filterText))
-        {
-            string filter = filterText.Trim().ToLower();
-            assignments = assignments.Where(a => 
-                a.Flight.FlightNumber.ToLower().Contains(filter) ||
-                a.Flight.Destination.ToLower().Contains(filter) ||
-                a.Flight.AircraftType.ToLower().Contains(filter));
-        }
-        
-        // Sort
-        switch (sortField)
-        {
-            case "flightNumber":
-                assignments = sortDirection == "asc" 
-                    ? assignments.OrderBy(a => a.Flight.FlightNumber)
-                    : assignments.OrderByDescending(a => a.Flight.FlightNumber);
-                break;
-                
-            case "departure":
-                assignments = sortDirection == "asc" 
-                    ? assignments.OrderBy(a => a.Flight.DepartureTime)
-                    : assignments.OrderByDescending(a => a.Flight.DepartureTime);
-                break;
-                
-            case "destination":
-                assignments = sortDirection == "asc" 
-                    ? assignments.OrderBy(a => a.Flight.Destination)
-                    : assignments.OrderByDescending(a => a.Flight.Destination);
-                break;
-                
-            case "aircraft":
-                assignments = sortDirection == "asc" 
-                    ? assignments.OrderBy(a => a.Flight.AircraftType)
-                    : assignments.OrderByDescending(a => a.Flight.AircraftType);
-                break;
-                
-            case "priority":
-                assignments = sortDirection == "asc" 
-                    ? assignments.OrderBy(a => a.Flight.Priority)
-                    : assignments.OrderByDescending(a => a.Flight.Priority);
-                break;
-                
-            default:
-                assignments = assignments.OrderBy(a => a.Flight.DepartureTime);
-                break;
-        }
-        
-        return assignments;
-    }
+
 }

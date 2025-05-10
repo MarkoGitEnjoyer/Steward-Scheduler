@@ -56,7 +56,9 @@ namespace Scheduler.UI.Controllers
                             ExperienceYears = (float)(new DateTime(2025, 2, 17) - steward.JoiningDate).TotalDays / 365
                         };
 
-                        // Get steward's languages names for display
+                        // Get steward's languages IDs and names for display
+                        var stewardLanguageIds = await _unitOfWork.Stewards.GetStewardLanguageIdsAsync(steward.StewardId);
+                        viewModel.SelectedSteward.LanguageIds = stewardLanguageIds.ToList();
                         viewModel.SelectedSteward.Languages = (await _unitOfWork.Stewards.GetStewardLanguageNamesAsync(steward.StewardId)).ToList();
 
                         // Get steward's licenses names for display
@@ -68,19 +70,41 @@ namespace Scheduler.UI.Controllers
 
                         // Load the steward's schedule for the selected week
                         var flights = await _schedulingService.GetStewardScheduleAsync(stewardId, weekStart);
-                        viewModel.ScheduledFlights = flights.Select(f => new FlightViewModel
+
+                        // Load language information
+                        var languageNamesMap = new Dictionary<int, string>();
+                        var allLanguages = await _unitOfWork.Languages.GetAllAsync();
+                        foreach (var lang in allLanguages)
                         {
-                            FlightId = f.FlightId,
-                            FlightNumber = f.FlightNumber,
-                            DepartureTime = f.DepartureTime,
-                            ArrivalTime = f.ArrivalTime,
-                            AircraftType = f.AircraftType,
-                            Destination = f.Destination,
-                            FlightTime = f.FlightTime,
-                            RequiredLanguageId = f.RequiredLanguageId,
-                            Priority = f.Priority,
-                            RequiredBusinessCrew = f.RequiredBusinessCrew,
-                            RequiredEconomyCrew = f.RequiredEconomyCrew
+                            languageNamesMap[lang.LanguageId] = lang.LanguageName;
+                        }
+
+                        // Create flight view models with language info
+                        viewModel.ScheduledFlights = flights.Select(f =>
+                        {
+                            string langName = "";
+                            if (f.RequiredLanguageId.HasValue && languageNamesMap.ContainsKey(f.RequiredLanguageId.Value))
+                            {
+                                langName = languageNamesMap[f.RequiredLanguageId.Value];
+                            }
+
+                            return new FlightViewModel
+                            {
+                                FlightId = f.FlightId,
+                                FlightNumber = f.FlightNumber,
+                                DepartureTime = f.DepartureTime,
+                                ArrivalTime = f.ArrivalTime,
+                                AircraftType = f.AircraftType,
+                                Destination = f.Destination,
+                                FlightTime = f.FlightTime,
+                                RequiredLanguageId = f.RequiredLanguageId,
+                                RequiredLanguageName = langName,
+                                Priority = f.Priority,
+                                RequiredBusinessCrew = f.RequiredBusinessCrew,
+                                RequiredEconomyCrew = f.RequiredEconomyCrew,
+                                StewardSpeaksLanguage = !f.RequiredLanguageId.HasValue ||
+                                    viewModel.SelectedSteward.LanguageIds.Contains(f.RequiredLanguageId.Value)
+                            };
                         }).ToList();
                     }
                 }

@@ -12,6 +12,7 @@
                         <th>Destination</th>
                         <th>Aircraft</th>
                         <th>Duration</th>
+                        <th>Priority</th>
                         <th>Business Class</th>
                         <th>Economy Class</th>
                         <th>Status</th>
@@ -29,6 +30,9 @@
                             <td>@flight.Flight.Destination</td>
                             <td>@flight.Flight.AircraftType</td>
                             <td>@flight.Flight.FlightTime hours</td>
+                            <td>
+                                <span class="badge bg-primary">@flight.Flight.Priority</span>
+                            </td>
                             <td>
                                 @if (flight.BusinessStewards.Any())
                                 {
