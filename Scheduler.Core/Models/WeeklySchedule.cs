@@ -176,30 +176,30 @@ namespace Scheduler.Core.Models
                 int stewardId = kvp.Key;
                 var flights = kvp.Value;
 
-                if (flights.Count <= 1)
-                    continue; // Only one flight, no rest issues
-
-                // Sort flights by departure time
-                var sortedFlights = flights.OrderBy(f => f.DepartureTime).ToList();
-
-                // Check consecutive flight pairs for rest time
-                for (int i = 0; i < sortedFlights.Count - 1; i++)
+                if (flights.Count > 1)
                 {
-                    var currentFlight = sortedFlights[i];
-                    var nextFlight = sortedFlights[i + 1];
+                    // Sort flights by departure time
+                    var sortedFlights = flights.OrderBy(f => f.DepartureTime).ToList();
 
-                    // Calculate rest time
-                    TimeSpan restTime = nextFlight.DepartureTime - currentFlight.ArrivalTime;
-
-                    // Check if rest time is less than 12 hours
-                    if (restTime.TotalHours < 12)
+                    // Check consecutive flight pairs for rest time
+                    for (int i = 0; i < sortedFlights.Count - 1; i++)
                     {
-                        return false;
+                        var currentFlight = sortedFlights[i];
+                        var nextFlight = sortedFlights[i + 1];
+
+                        // Calculate rest time
+                        TimeSpan restTime = nextFlight.DepartureTime - currentFlight.ArrivalTime;
+
+                        // Check if rest time is less than 12 hours
+                        if (restTime.TotalHours < 12)
+                        {
+                            return false;
+                        }
                     }
                 }
-            }
+                }
 
-            return true;
+                return true;
         }
 
         #endregion

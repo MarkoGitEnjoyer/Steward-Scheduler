@@ -39,6 +39,10 @@ namespace Scheduler.Core.Utils
             int totalPossibleFlights = schedule.TotalFlightCount > 0 ?
                 schedule.TotalFlightCount : schedule.FlightAssignments.Count;
 
+            // Protect against division by zero
+            if (totalPossibleFlights == 0)
+                return 0.0f;
+
             // Calculate the number of *fully completed* flight assignments.
             int fullyAssignedFlights = schedule.FlightAssignments.Count(fa => fa.IsComplete());
 

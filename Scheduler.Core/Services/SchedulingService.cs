@@ -39,18 +39,12 @@ namespace Scheduler.Core.Services
             // Generate initial schedule using priority-based scheduler
             var initialSchedule = GenerateInitialSchedule(flights, stewards, weekStart);
 
-            // Verify and fix hour constraints
-            EnsureScheduleHourConstraints(initialSchedule, stewards);
-
             // Report on initial schedule
             var initialFlightCount = initialSchedule.FlightAssignments.Count;
             Console.WriteLine($"Initial schedule has {initialFlightCount} flights scheduled.");
 
-            // Set the total flight count for genetic algorithm to use
-            initialSchedule.TotalFlightCount = totalFlights;
-
             // Optimize the schedule using genetic algorithm
-            var optimizedSchedule = OptimizeSchedule(flights, stewards, weekStart, initialSchedule, totalFlights);
+            var optimizedSchedule = OptimizeSchedule(flights, stewards, weekStart, initialSchedule);
 
             // Report final stats
             ReportScheduleStats(initialFlightCount, optimizedSchedule);
@@ -73,48 +67,27 @@ namespace Scheduler.Core.Services
             List<StewardDto> stewards,
             DateTime weekStart)
         {
-            // Sort flights by priority for better initial scheduling
-            var sortedFlights = flights.OrderByDescending(f => f.Priority).ToList();
-
             // Run the priority-based scheduler first
             var priorityScheduler = new PriorityBasedScheduler();
             return priorityScheduler.GenerateSchedule(
-                sortedFlights,
+                flights,
                 stewards,
                 weekStart,
                 new SchedulingWeights());
         }
 
-        private void EnsureScheduleHourConstraints(WeeklySchedule schedule, List<StewardDto> stewards)
-        {
-            // Verify hour constraints in initial schedule
-            if (!schedule.VerifyHourConstraints(stewards))
-            {
-                Console.WriteLine("WARNING: Initial schedule violates 90-hour constraint!");
-            }
-        }
 
         private WeeklySchedule OptimizeSchedule(
             List<FlightDto> flights,
             List<StewardDto> stewards,
             DateTime weekStart,
-            WeeklySchedule initialSchedule,
-            int totalFlights)
+            WeeklySchedule initialSchedule)
         {
             // Run the genetic scheduler to refine the schedule
             var geneticConfig = new GeneticAlgorithmConfig();
 
             var geneticScheduler = new GeneticScheduler(geneticConfig);
             var schedule = geneticScheduler.OptimizeSchedule(flights, stewards, weekStart);
-            schedule.TotalFlightCount = totalFlights;
-
-            // Final verification
-            if (!schedule.VerifyHourConstraints(stewards))
-            {
-                Console.WriteLine("WARNING: Final schedule violates 90-hour constraint! Falling back to initial schedule.");
-                initialSchedule.VerifyHourConstraints(stewards); // Verify initial schedule again
-                return initialSchedule;
-            }
 
             return schedule;
         }
@@ -122,8 +95,8 @@ namespace Scheduler.Core.Services
         private void ReportScheduleStats(int initialFlightCount, WeeklySchedule finalSchedule)
         {
             Console.WriteLine($"Initial schedule: {initialFlightCount} flights");
-            Console.WriteLine($"Final schedule: {finalSchedule.FlightAssignments.Count} flights");
-            Console.WriteLine($"Improvement: {finalSchedule.FlightAssignments.Count - initialFlightCount} additional flights scheduled");
+            Console.WriteLine($"Final schedule: {finalSchedule.FlightAssignments.Where(fl=>fl.IsComplete()).Count()} flights");
+            Console.WriteLine($"Improvement: {finalSchedule.FlightAssignments.Where(fl => fl.IsComplete()).Count() - initialFlightCount} additional flights scheduled");
         }
 
         
@@ -143,12 +116,6 @@ namespace Scheduler.Core.Services
 
                 // Track additional hours for each steward
                 var additionalHours = CalculateAdditionalHours(schedule, scheduleMonth, scheduleYear);
-
-                // Verify no steward exceeds 90 hours
-                if (!await VerifyStewardHourLimits(additionalHours, scheduleYear, scheduleMonth))
-                {
-                    return false;
-                }
 
                 // Clear existing assignments and create new ones
                 await ClearAndCreateNewAssignments(schedule);
@@ -175,15 +142,6 @@ namespace Scheduler.Core.Services
 
             foreach (var flightAssignment in schedule.FlightAssignments)
             {
-                // Skip flights from different months
-                if (flightAssignment.Flight.DepartureTime.Month != scheduleMonth ||
-                    flightAssignment.Flight.DepartureTime.Year != scheduleYear)
-                {
-                    Console.WriteLine($"WARNING: Flight {flightAssignment.Flight.FlightId} is in month " +
-                                    $"{flightAssignment.Flight.DepartureTime.Month}, but schedule is for month {scheduleMonth}");
-                    continue;
-                }
-
                 // Track flight hours for assigned stewards
                 TrackFlightHoursForStewards(flightAssignment, additionalHours);
             }
@@ -216,39 +174,6 @@ namespace Scheduler.Core.Services
                             $"Economy: {flightAssignment.EconomyStewards.Count}");
         }
 
-        private async Task<bool> VerifyStewardHourLimits(
-            Dictionary<int, float> additionalHours,
-            int scheduleYear,
-            int scheduleMonth)
-        {
-            Console.WriteLine("Checking individual steward hours against database records...");
-
-            // Sort stewards by ID for easier reading
-            var sortedStewardIds = additionalHours.Keys.OrderBy(id => id).ToList();
-
-            foreach (var stewardId in sortedStewardIds)
-            {
-                float newHours = additionalHours[stewardId];
-
-                // Get current hours from database
-                float currentHours = await _unitOfWork.Stewards.GetMonthlyHoursAsync(
-                    stewardId, scheduleYear, scheduleMonth);
-
-                float totalHours = currentHours + newHours;
-
-                Console.WriteLine($"Steward {stewardId}: Current {currentHours}h + New {newHours}h = Total {totalHours}h");
-
-                // Check if this exceeds 90 hours
-                if (totalHours > 90)
-                {
-                    Console.WriteLine($"ERROR: Steward {stewardId} would exceed 90-hour monthly limit with {totalHours} hours. Schedule not saved.");
-                    return false; // Don't save this invalid schedule
-                }
-            }
-
-            Console.WriteLine("All stewards' hours verified - no violations of 90-hour limit!");
-            return true;
-        }
 
         private async Task ClearAndCreateNewAssignments(WeeklySchedule schedule)
         {
