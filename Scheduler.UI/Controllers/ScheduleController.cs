@@ -7,8 +7,6 @@ namespace Scheduler.UI.Controllers
     public class ScheduleController
     {
         private readonly ISchedulingService _schedulingService;
-        private ScheduleGenerationViewModel _generationState = new();
-        private System.Threading.Timer? _progressTimer;
 
         public ScheduleController(ISchedulingService schedulingService)
         {
@@ -31,7 +29,6 @@ namespace Scheduler.UI.Controllers
 
                 if (schedule != null)
                 {
-                    viewModel.FitnessScore = schedule.FitnessScore;
                     viewModel.FlightAssignments = schedule.FlightAssignments
                         .Select(fa => MapFlightAssignmentToViewModel(fa))
                         .ToList();
@@ -49,51 +46,20 @@ namespace Scheduler.UI.Controllers
             return viewModel;
         }
 
-        public ScheduleGenerationViewModel GetGenerationState()
+        public async Task<bool> GenerateScheduleAsync(DateTime selectedDate)
         {
-            return _generationState;
+            // Adjust to Monday of the selected week
+            selectedDate = AdjustToMonday(selectedDate);
+
+            // Generate the schedule
+            var generatedSchedule = await _schedulingService.GenerateWeeklyScheduleAsync(selectedDate);
+
+            // Save the generated schedule
+            await _schedulingService.SaveScheduleAsync(generatedSchedule);
+
+            // Return success
+            return true;
         }
-
-        public async Task StartGenerationAsync(ScheduleGenerationViewModel model)
-        {
-            try
-            {
-                _generationState = model;
-                _generationState.IsLoading = true;
-                _generationState.ErrorMessage = null;
-                _generationState.GenerationCompleted = false;
-
-                // Adjust to Monday of the selected week
-                _generationState.SelectedDate = AdjustToMonday(_generationState.SelectedDate);
-               
-                var generatedSchedule = await _schedulingService.GenerateWeeklyScheduleAsync(_generationState.SelectedDate);
-
-                // Save the generated schedule
-                await _schedulingService.SaveScheduleAsync(generatedSchedule);
-
-                // Complete the progress
-                StopProgressSimulation();
-             
-                _generationState.GenerationCompleted = true;
-            }
-            catch (Exception ex)
-            {
-                StopProgressSimulation();
-                _generationState.ErrorMessage = $"An error occurred while generating the schedule: {ex.Message}";
-            }
-            finally
-            {
-                _generationState.IsLoading = false;
-            }
-        }
-
-
-        private void StopProgressSimulation()
-        {
-            _progressTimer?.Dispose();
-            _progressTimer = null;
-        }
-
 
         private DateTime AdjustToMonday(DateTime date)
         {

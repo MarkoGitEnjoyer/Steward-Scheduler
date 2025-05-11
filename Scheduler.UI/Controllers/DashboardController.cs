@@ -24,8 +24,6 @@ namespace Scheduler.UI.Controllers
                 var currentWeekStart = today.AddDays(-(int)today.DayOfWeek + 1);
                 if (currentWeekStart.DayOfWeek == DayOfWeek.Sunday) currentWeekStart = currentWeekStart.AddDays(1);
 
-                viewModel.CurrentWeekDisplay = $"{currentWeekStart:MMM dd} - {currentWeekStart.AddDays(6):MMM dd, yyyy}";
-
                 // Load current schedule
                 var currentSchedule = await _schedulingService.GetScheduleForWeekAsync(currentWeekStart);
 
@@ -47,14 +45,6 @@ namespace Scheduler.UI.Controllers
 
                     viewModel.ActiveStewards = allStewardIds.Count;
 
-                    // Calculate completion percentage
-                    viewModel.ScheduleCompletionPercentage = viewModel.CurrentWeekFlights > 0
-                        ? (int)Math.Round((double)viewModel.AssignedFlights / viewModel.CurrentWeekFlights * 100)
-                        : 0;
-
-                    // Use the fitness score as quality percentage
-                    viewModel.ScheduleQualityPercentage = (int)Math.Round(currentSchedule.FitnessScore * 100);
-
                     // Get upcoming flights (next 24 hours)
                     var nextDay = today.AddDays(1);
                     viewModel.UpcomingFlights = currentSchedule.FlightAssignments
@@ -64,7 +54,6 @@ namespace Scheduler.UI.Controllers
                         .ToList();
                 }
 
-                viewModel.LastUpdated = new DateTime(2025, 2, 17);
             }
             catch (Exception ex)
             {

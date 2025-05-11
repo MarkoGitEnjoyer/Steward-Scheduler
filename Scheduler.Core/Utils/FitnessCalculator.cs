@@ -206,7 +206,7 @@ namespace Scheduler.Core.Utils
             // Calculate average quality score for assigned stewards
             float avgExperience = allAssignedStewards.Average(s => Math.Min(1.0f, s.ExperienceYears / 10.0f)); // Normalize to 0-1
             float avgFeedback = allAssignedStewards.Average(s =>
-                Math.Min(1.0f, Math.Max(0, s.FeedbackScore / 5.0f))); // Normalize to 0-1
+                Math.Min(1.0f, Math.Max(0, s.FeedbackScore / 7.0f))); // Normalize to 0-1
 
             return (avgExperience + avgFeedback) / 2.0f;
         }

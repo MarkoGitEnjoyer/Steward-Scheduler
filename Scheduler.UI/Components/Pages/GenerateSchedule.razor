@@ -22,7 +22,6 @@
                         The schedule will be generated starting from the Monday of the selected week.
                     </small>
                 </div>
-
                 <div class="d-grid gap-2">
                     <button class="btn btn-primary" @onclick="StartGeneration" disabled="@model.IsLoading">
                         @if (model.IsLoading)
@@ -38,14 +37,12 @@
                 </div>
             </div>
         </div>
-
         @if (!string.IsNullOrEmpty(model.ErrorMessage))
         {
             <div class="alert alert-danger mt-3">
                 <strong>Error:</strong> @model.ErrorMessage
             </div>
         }
-
         @if (model.GenerationCompleted)
         {
             <div class="alert alert-success mt-3">
@@ -66,16 +63,10 @@
             SelectedDate = new DateTime(2025, 2, 17),
         };
 
-    // Timer for progress updates
-    private System.Threading.Timer? progressTimer;
-
     protected override void OnInitialized()
     {
         // Ensure selected date is the beginning of a week (Monday)
         AdjustSelectedDateToMonday();
-
-        // Get the current state from the controller
-        model = ScheduleController.GetGenerationState();
     }
 
     private void AdjustSelectedDateToMonday()
@@ -86,41 +77,33 @@
 
     private async Task StartGeneration()
     {
-        // Start the generation process in the controller
-        await ScheduleController.StartGenerationAsync(model);
-
-        // Set up a timer to poll for updates
-        progressTimer = new System.Threading.Timer(CheckProgress, null, 0, 500);
-    }
-
-    private void CheckProgress(object? state)
-    {
-        // Get the latest state from the controller
-        var updatedModel = ScheduleController.GetGenerationState();
-
-        // Update the view model with new values
-        model.IsLoading = updatedModel.IsLoading;
-        model.ErrorMessage = updatedModel.ErrorMessage;
-        model.GenerationCompleted = updatedModel.GenerationCompleted;
-
-        // If generation is complete or errored, stop the timer
-        if (!updatedModel.IsLoading)
+        try
         {
-            progressTimer?.Dispose();
-            progressTimer = null;
-        }
+            // Reset any previous state
+            model.GenerationCompleted = false;
+            model.ErrorMessage = null;
+            model.IsLoading = true;
 
-        // Force UI update
-        InvokeAsync(StateHasChanged);
+            // Start the generation process
+            var result = await ScheduleController.GenerateScheduleAsync(model.SelectedDate);
+
+            // Update our model with the result
+            model.GenerationCompleted = true;
+        }
+        catch (Exception ex)
+        {
+            model.ErrorMessage = $"Error generating schedule: {ex.Message}";
+        }
+        finally
+        {
+            model.IsLoading = false;
+            // Ensure the UI updates
+            StateHasChanged();
+        }
     }
 
     private void ViewGeneratedSchedule()
     {
         NavigationManager.NavigateTo("/view-schedule");
-    }
-
-    public void Dispose()
-    {
-        progressTimer?.Dispose();
     }
 }

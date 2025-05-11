@@ -34,9 +34,6 @@
 <div class="card mb-4">
     <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
         <h5 class="mb-0">Schedule: @model.FormattedWeekRange</h5>
-        <div>
-            <span class="badge bg-info">Fitness Score: @(Math.Round(model.FitnessScore * 100, 1))%</span>
-        </div>
     </div>
     <div class="card-body">
         @if (model.IsLoading)
@@ -202,43 +199,17 @@
             }
             else // list view
             {
-                <div class="mb-3">
-                    <div class="input-group">
-                        <span class="input-group-text">Filter</span>
-                        <input type="text" class="form-control" placeholder="Flight number, destination, aircraft..."
-                               @bind="filterText" @bind:event="oninput" />
-                    </div>
-                </div>
+           
 
                 <div class="table-responsive">
                     <table class="table table-striped table-hover">
                         <thead>
                             <tr>
-                                <th>
-                                    
-                                        Flight 
-                                        
-                                </th>
-                                <th>
-                                   
-                                        Departure
-                                        
-                                </th>
-                                <th>
-                                   
-                                        Destination
-                                      
-                                </th>
-                                <th>
-                                   
-                                        Aircraft
-                                       
-                                </th>
-                                <th>
-                                 
-                                        Priority
-                                
-                                </th>
+                                <th> Flight </th>
+                                <th> Departure</th>
+                                <th> Destination </th>
+                                <th> Aircraft</th>
+                                <th>Priority</th>
                                 <th>Crew Status</th>
                                 <th>Actions</th>
                             </tr>
@@ -399,7 +370,6 @@
     private DateTime selectedDay = new DateTime(2025, 2, 17);
     private ScheduleViewModel model = new ScheduleViewModel();
     private string viewMode = "list";
-    private string filterText = "";
     private string vday = "day";
     private string vlist = "list";
     private string sortField = "departure";
@@ -426,19 +396,7 @@
         // Load the schedule for the selected week using the controller
         model = await ScheduleController.GetScheduleForWeekAsync(selectedDate);
 
-        // If schedule loaded successfully, set selected day to first day with flights
-        if (model.FlightAssignments.Any())
-        {
-            var firstFlightDay = model.FlightAssignments.OrderBy(fa => fa.Flight.DepartureTime).First().Flight.DepartureTime.Date;
-            if (firstFlightDay >= model.WeekStart && firstFlightDay < model.WeekEnd)
-            {
-                selectedDay = firstFlightDay;
-            }
-            else
-            {
-                selectedDay = model.WeekStart;
-            }
-        }
+        selectedDay = model.WeekStart;
     }
 
     private void PreviousWeek()

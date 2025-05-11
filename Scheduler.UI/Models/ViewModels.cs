@@ -16,10 +16,6 @@ namespace Scheduler.UI.Models
         public int CurrentWeekFlights { get; set; }
         public int AssignedFlights { get; set; }
         public int ActiveStewards { get; set; }
-        public int ScheduleCompletionPercentage { get; set; }
-        public int ScheduleQualityPercentage { get; set; }
-        public DateTime LastUpdated { get; set; }
-        public string CurrentWeekDisplay { get; set; } = string.Empty;
         public List<FlightViewModel> UpcomingFlights { get; set; } = new();
     }
 
@@ -29,9 +25,6 @@ namespace Scheduler.UI.Models
         public DateTime WeekStart { get; set; }
         public DateTime WeekEnd { get; set; }
         public List<FlightAssignmentViewModel> FlightAssignments { get; set; } = new();
-        public float FitnessScore { get; set; }
-        public int FlightCount => FlightAssignments.Count;
-        public int CompletedFlightCount => FlightAssignments.Count(fa => fa.IsComplete);
 
         // Fixed formatted week range calculation
         public string FormattedWeekRange
