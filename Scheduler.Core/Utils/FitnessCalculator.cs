@@ -35,19 +35,14 @@ namespace Scheduler.Core.Utils
         // Calculate coverage rate of flights
         private static float CalculateFlightCoverageRate(WeeklySchedule schedule)
         {
-            // Track total flights that should be scheduled this week
-            int totalPossibleFlights = schedule.TotalFlightCount > 0 ?
-                schedule.TotalFlightCount : schedule.FlightAssignments.Count;
-
-            // Protect against division by zero
-            if (totalPossibleFlights == 0)
+            if (schedule.TotalFlightCount == 0)
                 return 0.0f;
 
             // Calculate the number of *fully completed* flight assignments.
             int fullyAssignedFlights = schedule.FlightAssignments.Count(fa => fa.IsComplete());
 
             // Calculate coverage rate based on *completed* assignments.
-            return (float)fullyAssignedFlights / totalPossibleFlights;
+            return (float)fullyAssignedFlights / schedule.TotalFlightCount;
         }
 
         // Calculate completion rate of scheduled flights
@@ -131,7 +126,7 @@ namespace Scheduler.Core.Utils
                     {
                         totalStewardAssignments++;
 
-                        if (steward.LanguageIds.Contains(requiredLanguageId))
+                        if(steward.DoesSpeakLanguage(requiredLanguageId))
                         {
                             matchedStewardAssignments++;
                         }

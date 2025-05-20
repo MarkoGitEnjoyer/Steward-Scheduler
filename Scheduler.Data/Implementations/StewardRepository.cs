@@ -15,51 +15,6 @@ namespace Scheduler.Data.Implementations
         {
         }
 
-        public async Task<IEnumerable<Steward>> GetStewardsByRoleAsync(Role role)
-        {
-            string roleString = role.ToString();
-            return await _context.Stewards
-                .Where(s => s.RoleString.ToLower() == roleString.ToLower())
-                .ToListAsync();
-        }
-
-        // Rest of the methods remain unchanged
-        public async Task<IEnumerable<Steward>> GetAvailableStewardsAsync(DateTime startTime, float flightDuration)
-        {
-            var minRestTime = TimeSpan.FromHours(12);
-
-            return await _context.Stewards
-                .Where(s => s.LastFlightEndTime == null ||
-                            startTime - s.LastFlightEndTime.Value > minRestTime)
-                .ToListAsync();
-        }
-
-        public async Task<IEnumerable<Steward>> GetStewardsWithLicenseAsync(string aircraftType)
-        {
-            var licenseIds = await _context.AircraftLicenses
-                .Where(l => l.AircraftTypeId == aircraftType)
-                .Select(l => l.LicenseId)
-                .ToListAsync();
-
-            return await _context.Stewards
-                .Where(s => s.StewardLicenses.Any(sl => licenseIds.Contains(sl.LicenseId)))
-                .ToListAsync();
-        }
-
-        public async Task<IEnumerable<Steward>> GetStewardsWithLanguageAsync(int languageId)
-        {
-            return await _context.Stewards
-                .Where(s => s.StewardLanguages.Any(sl => sl.LanguageId == languageId))
-                .ToListAsync();
-        }
-
-        public async Task<IEnumerable<Steward>> GetSeniorStewardsAsync()
-        {
-            return await _context.Stewards
-                .Where(s => s.IsSenior)
-                .ToListAsync();
-        }
-
         public async Task<float> GetMonthlyHoursAsync(int stewardId, int year, int month)
         {
             var hours = await _context.MonthlyHours
@@ -89,7 +44,6 @@ namespace Scheduler.Data.Implementations
                     HoursWorked = additionalHours
                 });
             }
-            await _context.SaveChangesAsync();
         }
 
         public async Task UpdateLastFlightTimeAsync(int stewardId, DateTime endTime)
@@ -126,22 +80,17 @@ namespace Scheduler.Data.Implementations
         {
             return await _context.StewardLanguages
                 .Where(sl => sl.StewardId == stewardId)
-                .Join(_context.Languages,
-                    sl => sl.LanguageId,
-                    l => l.LanguageId,
-                    (sl, l) => l.LanguageName)
+                .Include(sl => sl.Language)
+                .Select(sl => sl.Language.LanguageName)
                 .ToListAsync();
         }
 
         public async Task<IEnumerable<string>> GetStewardLicenseNamesAsync(int stewardId)
         {
-            // This directly returns the aircraft types that the steward is licensed for
             return await _context.StewardLicenses
                 .Where(sl => sl.StewardId == stewardId)
-                .Join(_context.AircraftLicenses,
-                    sl => sl.LicenseId,
-                    al => al.LicenseId,
-                    (sl, al) => al.AircraftTypeId)
+                .Include(sl => sl.License)
+                .Select(sl => sl.License.AircraftTypeId)
                 .ToListAsync();
         }
     }

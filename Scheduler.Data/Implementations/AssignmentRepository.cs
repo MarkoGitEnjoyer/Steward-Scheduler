@@ -31,18 +31,5 @@ namespace Scheduler.Data.Implementations
                 .ToListAsync();
         }
 
-        public async Task<IEnumerable<Steward>> GetAssignedStewardsAsync(int flightId)
-        {
-            return await _context.Assignments
-                .Where(a => a.FlightId == flightId)
-                .Select(a => a.Steward)
-                .ToListAsync();
-        }
-
-        public async Task<bool> IsAssignedAsync(int stewardId, int flightId)
-        {
-            return await _context.Assignments
-                .AnyAsync(a => a.StewardId == stewardId && a.FlightId == flightId);
-        }
     }
 }

@@ -15,59 +15,11 @@ namespace Scheduler.Data.Implementations
         {
         }
 
-        public async Task<IEnumerable<Flight>> GetUpcomingFlightsAsync(DateTime fromDate)
+        public async Task<List<Flight>> GetFlightsForAWeek(DateTime weekStart)
         {
             return await _context.Flights
-                .Where(f => f.DepartureTime >= fromDate)
-                .OrderBy(f => f.DepartureTime)
+                .Where(fl => fl.DepartureTime >= weekStart && fl.DepartureTime <= weekStart.AddDays(7))
                 .ToListAsync();
-        }
-
-        public async Task<IEnumerable<Flight>> GetFlightsByAircraftTypeAsync(string aircraftType)
-        {
-            return await _context.Flights
-                .Where(f => f.AircraftType == aircraftType)
-                .ToListAsync();
-        }
-
-        public async Task<IEnumerable<Flight>> GetFlightsByPriorityAsync(int minimumPriority)
-        {
-            return await _context.Flights
-                .Where(f => f.Priority >= minimumPriority)
-                .OrderByDescending(f => f.Priority)
-                .ToListAsync();
-        }
-
-        public async Task<IEnumerable<Flight>> GetUnassignedFlightsAsync()
-        {
-            // Get flights that don't have the required number of crew members assigned
-            var flights = await _context.Flights
-                .Include(f => f.Aircraft)
-                .Include(f => f.Assignments)
-                .ToListAsync();
-
-            var unassignedFlights = new List<Flight>();
-
-            foreach (var flight in flights)
-            {
-                var businessAssignments = await _context.Assignments
-                    .Include(a => a.Steward)
-                    .Where(a => a.FlightId == flight.FlightId && a.Steward.Role == Role.Business)
-                    .CountAsync();
-
-                var economyAssignments = await _context.Assignments
-                    .Include(a => a.Steward)
-                    .Where(a => a.FlightId == flight.FlightId && a.Steward.Role == Role.Economy)
-                    .CountAsync();
-
-                if (businessAssignments < flight.Aircraft.BusinessClassCrew ||
-                    economyAssignments < flight.Aircraft.EconomyClassCrew)
-                {
-                    unassignedFlights.Add(flight);
-                }
-            }
-
-            return unassignedFlights;
         }
     }
 }

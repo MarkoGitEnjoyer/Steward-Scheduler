@@ -20,17 +20,5 @@ namespace Scheduler.Data.Implementations
             return await _context.AircraftTypes
                 .FirstOrDefaultAsync(a => a.AircraftTypeId == aircraftType);
         }
-
-        public async Task<int> GetRequiredBusinessCrewAsync(string aircraftType)
-        {
-            var aircraft = await GetAircraftTypeByNameAsync(aircraftType);
-            return aircraft?.BusinessClassCrew ?? 0;
-        }
-
-        public async Task<int> GetRequiredEconomyCrewAsync(string aircraftType)
-        {
-            var aircraft = await GetAircraftTypeByNameAsync(aircraftType);
-            return aircraft?.EconomyClassCrew ?? 0;
-        }
     }
 }

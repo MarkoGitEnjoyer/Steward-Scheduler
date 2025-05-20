@@ -8,9 +8,9 @@ namespace Scheduler.Data.Repositories
 {
     public interface IAssignmentRepository : IRepository<Models.Assignment>
     {
+        // get assignments where stewardId is assigned
         Task<IEnumerable<Models.Assignment>> GetAssignmentsByStewardAsync(int stewardId);
+        // get assignments of flightId
         Task<IEnumerable<Models.Assignment>> GetAssignmentsByFlightAsync(int flightId);
-        Task<IEnumerable<Models.Steward>> GetAssignedStewardsAsync(int flightId);
-        Task<bool> IsAssignedAsync(int stewardId, int flightId);
     }
 }

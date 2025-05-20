@@ -30,9 +30,5 @@ namespace Scheduler.Data.Models
         // Navigation properties
         public virtual ICollection<Assignment> Assignments { get; set; }
 
-        public Flight()
-        {
-            Assignments = new HashSet<Assignment>();
-        }
     }
 }

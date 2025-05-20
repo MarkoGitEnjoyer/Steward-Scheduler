@@ -43,13 +43,5 @@ namespace Scheduler.Data.Models
         public virtual ICollection<Feedback> Feedbacks { get; set; }
         public virtual ICollection<Assignment> Assignments { get; set; }
 
-        public Steward()
-        {
-            MonthlyHours = new HashSet<MonthlyHours>();
-            StewardLicenses = new HashSet<StewardLicense>();
-            StewardLanguages = new HashSet<StewardLanguage>();
-            Feedbacks = new HashSet<Feedback>();
-            Assignments = new HashSet<Assignment>();
-        }
     }
 }

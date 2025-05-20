@@ -15,10 +15,5 @@ namespace Scheduler.Data.Implementations
         {
         }
 
-        public async Task<Language> GetLanguageByNameAsync(string languageName)
-        {
-            return await _context.Languages
-                .FirstOrDefaultAsync(l => l.LanguageName.Equals(languageName, StringComparison.OrdinalIgnoreCase));
-        }
     }
 }

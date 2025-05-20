@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Scheduler.Data.Models;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -8,6 +9,5 @@ namespace Scheduler.Data.Repositories
 {
     public interface ILanguageRepository : IRepository<Models.Language>
     {
-        Task<Models.Language> GetLanguageByNameAsync(string languageName);
     }
 }

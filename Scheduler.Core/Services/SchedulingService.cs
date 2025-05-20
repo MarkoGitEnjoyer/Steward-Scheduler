@@ -25,11 +25,9 @@ namespace Scheduler.Core.Services
         {
             // Normalize to the start of the week (Monday)
             weekStart = NormalizeToWeekStart(weekStart);
-            var weekEnd = weekStart.AddDays(7);
 
             // Get all flights for the week
-            var flights = await GetFlightsForWeekAsync(weekStart, weekEnd);
-            int totalFlights = flights.Count;
+            var flights = await GetFlightsForWeekAsync(weekStart);
 
             // Get all stewards with their current monthly hours
             var stewards = await GetAllStewardsWithDetailsAsync(weekStart);
@@ -47,12 +45,7 @@ namespace Scheduler.Core.Services
 
         private DateTime NormalizeToWeekStart(DateTime date)
         {
-            // Normalize to the start of the week (Monday)
-            date = date.Date.AddDays(-(int)date.DayOfWeek + 1);
-            if (date.DayOfWeek == DayOfWeek.Sunday)
-                date = date.AddDays(1);
-
-            return date;
+            return date.Date.AddDays(-(int)date.DayOfWeek + 1);
         }
 
         private WeeklySchedule GenerateScheduleWithGA(
@@ -60,9 +53,11 @@ namespace Scheduler.Core.Services
             List<StewardDto> stewards,
             DateTime weekStart)
         {
-            // Run the genetic scheduler directly
+            // create new config for GA
             var geneticConfig = new GeneticAlgorithmConfig();
+            // create instance of GA with config
             var geneticScheduler = new GeneticScheduler(geneticConfig);
+            // run GA
             return geneticScheduler.OptimizeSchedule(flights, stewards, weekStart);
         }
 
@@ -77,9 +72,6 @@ namespace Scheduler.Core.Services
 
                 Console.WriteLine($"Validating schedule for month: {scheduleYear}-{scheduleMonth}");
                 Console.WriteLine($"Schedule contains {schedule.FlightAssignments.Where(fl=>fl.IsComplete()).Count()} flight assignments");
-
-                // Track additional hours for each steward
-                var additionalHours = CalculateAdditionalHours(schedule, scheduleMonth, scheduleYear);
 
                 // Clear existing assignments and create new ones
                 await ClearAndCreateNewAssignments(schedule);
@@ -97,47 +89,7 @@ namespace Scheduler.Core.Services
             }
         }
 
-        private Dictionary<int, float> CalculateAdditionalHours(
-            WeeklySchedule schedule,
-            int scheduleMonth,
-            int scheduleYear)
-        {
-            var additionalHours = new Dictionary<int, float>();
-
-            foreach (var flightAssignment in schedule.FlightAssignments)
-            {
-                // Track flight hours for assigned stewards
-                TrackFlightHoursForStewards(flightAssignment, additionalHours);
-            }
-
-            return additionalHours;
-        }
-
-        private void TrackFlightHoursForStewards(
-            FlightAssignment flightAssignment,
-            Dictionary<int, float> additionalHours)
-        {
-            float flightTime = flightAssignment.Flight.FlightTime;
-
-            // Log flight information
-            Console.WriteLine($"Processing flight {flightAssignment.Flight.FlightId}: {flightAssignment.Flight.FlightTime}h");
-
-            // Add hours for all assigned stewards
-            foreach (var steward in flightAssignment.BusinessStewards.Concat(flightAssignment.EconomyStewards))
-            {
-                if (!additionalHours.ContainsKey(steward.StewardId))
-                {
-                    additionalHours[steward.StewardId] = 0;
-                }
-
-                additionalHours[steward.StewardId] += flightTime;
-            }
-
-            // Log assignment counts
-            Console.WriteLine($"  - Business: {flightAssignment.BusinessStewards.Count}, " +
-                            $"Economy: {flightAssignment.EconomyStewards.Count}");
-        }
-
+      
         private async Task ClearAndCreateNewAssignments(WeeklySchedule schedule)
         {
             // Clear all existing assignments for the week
@@ -147,8 +99,7 @@ namespace Scheduler.Core.Services
             Console.WriteLine($"Clearing all existing flight assignments for the week {weekStart:yyyy-MM-dd} to {weekEnd:yyyy-MM-dd}...");
 
             // Get all flights for the week
-            var weeklyFlights = await _unitOfWork.Flights.FindAsync(f =>
-                f.DepartureTime >= weekStart && f.DepartureTime < weekEnd);
+            var weeklyFlights = await _unitOfWork.Flights.GetFlightsForAWeek(weekStart);
 
             var weeklyFlightIds = weeklyFlights.Select(f => f.FlightId).ToList();
 
@@ -179,16 +130,9 @@ namespace Scheduler.Core.Services
                 var month = flightAssignment.Flight.DepartureTime.Month;
                 var year = flightAssignment.Flight.DepartureTime.Year;
 
-                // Add business stewards
+                // Add stewards
                 assignmentCount += await CreateStewardAssignments(
-                    flightAssignment.BusinessStewards,
-                    flightAssignment.Flight,
-                    year,
-                    month);
-
-                // Add economy stewards
-                assignmentCount += await CreateStewardAssignments(
-                    flightAssignment.EconomyStewards,
+                    flightAssignment.BusinessStewards.Concat(flightAssignment.EconomyStewards).ToList(),
                     flightAssignment.Flight,
                     year,
                     month);
@@ -234,7 +178,6 @@ namespace Scheduler.Core.Services
                 {
                     Console.WriteLine($"Error creating assignment for steward {steward.StewardId} " +
                                     $"on flight {flight.FlightId}: {ex.Message}");
-                    throw; // Re-throw to be caught by outer exception handler
                 }
             }
 
@@ -244,13 +187,6 @@ namespace Scheduler.Core.Services
         private void LogException(Exception ex)
         {
             Console.WriteLine($"ERROR saving schedule: {ex.Message}");
-            Console.WriteLine($"Exception type: {ex.GetType().Name}");
-            Console.WriteLine($"Stack trace: {ex.StackTrace}");
-
-            if (ex.InnerException != null)
-            {
-                Console.WriteLine($"Inner exception: {ex.InnerException.Message}");
-            }
         }
 
         // Get a previously saved schedule for a week
@@ -261,7 +197,7 @@ namespace Scheduler.Core.Services
             var weekEnd = weekStart.AddDays(7);
 
             // Get all flights and stewards for the week
-            var flights = await GetFlightsForWeekAsync(weekStart, weekEnd);
+            var flights = await GetFlightsForWeekAsync(weekStart);
             var stewards = await GetAllStewardsWithDetailsAsync(weekStart);
             var stewardMap = stewards.ToDictionary(s => s.StewardId);
 
@@ -364,11 +300,10 @@ namespace Scheduler.Core.Services
 
         // Helper methods for data access
 
-        private async Task<List<FlightDto>> GetFlightsForWeekAsync(DateTime weekStart, DateTime weekEnd)
+        private async Task<List<FlightDto>> GetFlightsForWeekAsync(DateTime weekStart)
         {
             // Get all flights departing within the week
-            var flights = await _unitOfWork.Flights.FindAsync(f =>
-                f.DepartureTime >= weekStart && f.DepartureTime < weekEnd);
+            var flights = await _unitOfWork.Flights.GetFlightsForAWeek(weekStart);
 
             var flightDtos = new List<FlightDto>();
 

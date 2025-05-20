@@ -15,13 +15,6 @@ namespace Scheduler.Data.Implementations
         {
         }
 
-        public async Task<IEnumerable<Feedback>> GetFeedbackByStewardAsync(int stewardId)
-        {
-            return await _context.Feedbacks
-                .Where(f => f.StewardId == stewardId)
-                .ToListAsync();
-        }
-
         public async Task<int> GetPositiveFeedbackCountAsync(int stewardId)
         {
             return await _context.Feedbacks

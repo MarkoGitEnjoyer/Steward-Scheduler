@@ -54,7 +54,7 @@ namespace Scheduler.Data.Models
                 entity.Property(e => e.StewardId).HasColumnName("steward_id");
                 entity.Property(e => e.FirstName).HasColumnName("first_name");
                 entity.Property(e => e.LastName).HasColumnName("last_name");
-                entity.Property(e => e.RoleString).HasColumnName("role"); // Map to the role column
+                entity.Property(e => e.RoleString).HasColumnName("role"); 
                 entity.Property(e => e.IsSenior).HasColumnName("is_senior");
                 entity.Property(e => e.JoiningDate).HasColumnName("joining_date");
                 entity.Property(e => e.LastFlightEndTime).HasColumnName("last_flight_end_time");

@@ -19,8 +19,6 @@ namespace Scheduler.Data.Models
         public int FeedbackId { get; set; }
         public int StewardId { get; set; }
         public FeedbackType FeedbackType { get; set; }
-
-        // Make FeedbackText nullable to handle DBNull values
         public string? FeedbackText { get; set; }
 
         [ForeignKey("StewardId")]

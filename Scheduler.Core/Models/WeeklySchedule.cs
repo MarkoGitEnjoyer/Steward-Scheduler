@@ -9,8 +9,6 @@ namespace Scheduler.Core.Models
     public class WeeklySchedule
     {
         private const float MAX_HOURS_LIMIT = 90.0f;
-        private const float SAFETY_MARGIN = 0.1f; // Small safety margin to prevent rounding errors
-
         public DateTime WeekStart { get; set; }
         public DateTime WeekEnd { get; set; }
         public List<FlightAssignment> FlightAssignments { get; set; } = new List<FlightAssignment>();
@@ -86,6 +84,7 @@ namespace Scheduler.Core.Models
         {
             if (stewards != null)
             {
+                // convert stewards to dictionary and the key is stewardId
                 var stewardMap = stewards.ToDictionary(s => s.StewardId);
 
                 foreach (var entry in StewardHours)
@@ -93,6 +92,7 @@ namespace Scheduler.Core.Models
                     int stewardId = entry.Key;
                     float scheduledHours = entry.Value;
 
+                    // if it finds steward in dictionary we did before we can use it in {} block
                     if (stewardMap.TryGetValue(stewardId, out var steward))
                     {
                         // Calculate total hours (base + scheduled)
@@ -103,18 +103,6 @@ namespace Scheduler.Core.Models
                             LogHourConstraintViolation(stewardId, totalHours);
                             return false;
                         }
-                    }
-                }
-            }
-            else
-            {
-                // Without steward data, just check that no scheduled hours exceed 90
-                foreach (var entry in StewardHours)
-                {
-                    if (entry.Value > MAX_HOURS_LIMIT)
-                    {
-                        LogHourConstraintViolation(entry.Key, entry.Value);
-                        return false;
                     }
                 }
             }
@@ -130,15 +118,14 @@ namespace Scheduler.Core.Models
             if (FlightAssignments.Count == 0)
                 return false;
 
-            return !HasOverlappingFlights() &&
-                   ValidateScheduleRestTimes() &&
+            return !HasOverlappingFlightsOrRestTime() &&
                    VerifyHourConstraints();
         }
 
         /// <summary>
         /// Check if there are any overlapping flights in the schedule
         /// </summary>
-        public bool HasOverlappingFlights()
+        public bool HasOverlappingFlightsOrRestTime()
         {
             // Check each steward's schedule for overlapping flights
             foreach (var kvp in StewardSchedules)
@@ -157,49 +144,17 @@ namespace Scheduler.Core.Models
                         {
                             return true;
                         }
-                    }
-                }
-            }
-            return false;
-        }
-
-        /// <summary>
-        /// Check if a schedule adheres to rest time constraints
-        /// </summary>
-        public bool ValidateScheduleRestTimes()
-        {
-            if (StewardSchedules.Count == 0)
-                return true; // Empty schedules are valid
-
-            foreach (var kvp in StewardSchedules)
-            {
-                int stewardId = kvp.Key;
-                var flights = kvp.Value;
-
-                if (flights.Count > 1)
-                {
-                    // Sort flights by departure time
-                    var sortedFlights = flights.OrderBy(f => f.DepartureTime).ToList();
-
-                    // Check consecutive flight pairs for rest time
-                    for (int i = 0; i < sortedFlights.Count - 1; i++)
-                    {
-                        var currentFlight = sortedFlights[i];
-                        var nextFlight = sortedFlights[i + 1];
-
-                        // Calculate rest time
-                        TimeSpan restTime = nextFlight.DepartureTime - currentFlight.ArrivalTime;
+                        TimeSpan restTime = orderedFlights[j].DepartureTime - orderedFlights[i].ArrivalTime;
 
                         // Check if rest time is less than 12 hours
                         if (restTime.TotalHours < 12)
                         {
-                            return false;
+                            return true;
                         }
                     }
                 }
-                }
-
-                return true;
+            }
+            return false;
         }
 
         #endregion
@@ -219,14 +174,8 @@ namespace Scheduler.Core.Models
                 float flightTime = assignment.Flight.FlightTime;
 
                 // Process business stewards
-                UpdateStewardSchedulesForGroup(assignment.BusinessStewards, assignment.Flight, flightTime);
-
-                // Process economy stewards
-                UpdateStewardSchedulesForGroup(assignment.EconomyStewards, assignment.Flight, flightTime);
+                UpdateStewardSchedulesForGroup((assignment.BusinessStewards.Concat(assignment.EconomyStewards)).ToList(), assignment.Flight, flightTime);
             }
-
-            // Sort each steward's flights chronologically
-            SortStewardFlights();
 
             // Update LastFlightEndTime for each steward
             UpdateStewardsLastFlightTime();
@@ -249,19 +198,6 @@ namespace Scheduler.Core.Models
                     StewardHours[steward.StewardId] = 0;
 
                 StewardHours[steward.StewardId] += flightTime;
-            }
-        }
-
-        private void SortStewardFlights()
-        {
-            foreach (var kvp in StewardSchedules.ToDictionary(x => x.Key, x => x.Value))
-            {
-                int stewardId = kvp.Key;
-                var flights = kvp.Value;
-
-                // Sort flights by departure time
-                var sortedFlights = flights.OrderBy(f => f.DepartureTime).ToList();
-                StewardSchedules[stewardId] = sortedFlights;
             }
         }
 

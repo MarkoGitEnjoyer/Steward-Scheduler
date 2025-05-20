@@ -20,9 +20,5 @@ namespace Scheduler.Data.Models
         // Navigation properties
         public virtual ICollection<StewardLicense> StewardLicenses { get; set; }
 
-        public AircraftLicense()
-        {
-            StewardLicenses = new HashSet<StewardLicense>();
-        }
     }
 }

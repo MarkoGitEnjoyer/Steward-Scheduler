@@ -369,45 +369,27 @@ namespace Scheduler.Core.Algorithms
 
         private WeeklySchedule SelectBestSolution(
             List<WeeklySchedule> population,
-            WeeklySchedule bestEver,
+            WeeklySchedule bestFitness,
             WeeklySchedule bestWithMostFlights)
         {
-            // Sort by fitness and get the best
-            population = population.OrderByDescending(s => s.FitnessScore).ToList();
-            var bestFitness = population[0];
-
-            // Get the schedule with the most flights
-            var mostFlights = population.OrderByDescending(s => s.FlightAssignments.Where(fl=>fl.IsComplete()).Count())
-                                      .ThenByDescending(s => s.FitnessScore)
-                                      .First();
-
             // Compare the various solutions
-            LogFinalSolutionComparison(bestFitness, mostFlights, bestEver, bestWithMostFlights);
+            LogFinalSolutionComparison(bestFitness,bestWithMostFlights);
 
             var bestFitnessFlightsC = bestFitness.FlightAssignments.Where(fl => fl.IsComplete()).Count();
-            var mostFlightsFlightsC = mostFlights.FlightAssignments.Where(fl => fl.IsComplete()).Count();
             var bestWithMostFlightsFlightsC = bestWithMostFlights.FlightAssignments.Where(fl => fl.IsComplete()).Count();
             // Fitness threshold for comparing solutions
             float fitnessThreshold = 0.95f;
 
-            // Prefer the solution with more flights if the fitness difference is small
-            if (mostFlightsFlightsC > bestFitnessFlightsC &&
-                mostFlights.FitnessScore > bestFitness.FitnessScore * fitnessThreshold)
-            {
-                Console.WriteLine($"Choosing schedule with more flights ({mostFlightsFlightsC}) over best fitness");
-                return mostFlights;
-            }
-
             // If best ever solution has more flights and similar fitness, use that
-            if (bestEver.FlightAssignments.Where(fl => fl.IsComplete()).Count() > bestFitnessFlightsC &&
-                bestEver.FitnessScore > bestFitness.FitnessScore * fitnessThreshold)
+            if (bestWithMostFlightsFlightsC > bestFitnessFlightsC &&
+                bestFitness.FitnessScore > bestFitness.FitnessScore * fitnessThreshold)
             {
-                Console.WriteLine($"Returning best solution ever found: {bestEver.FitnessScore:F4} ({bestEver.FlightAssignments.Where(fl => fl.IsComplete()).Count()} flights)");
-                return bestEver;
+                Console.WriteLine($"Returning best solution ever found: {bestFitness.FitnessScore:F4} ({bestFitness.FlightAssignments.Where(fl => fl.IsComplete()).Count()} flights)");
+                return bestFitness;
             }
 
             // If best with most flights has significantly more flights, use that
-            if (bestWithMostFlightsFlightsC > bestFitness.FlightAssignments.Count * 1.1 &&
+            if (bestWithMostFlightsFlightsC > bestFitnessFlightsC * 1.1 &&
                 bestWithMostFlights.FitnessScore > bestFitness.FitnessScore * fitnessThreshold)
             {
                 Console.WriteLine($"Returning solution with most flights: {bestWithMostFlights.FitnessScore:F4} ({bestWithMostFlightsFlightsC} flights)");
@@ -420,13 +402,9 @@ namespace Scheduler.Core.Algorithms
 
         private void LogFinalSolutionComparison(
             WeeklySchedule bestFitness,
-            WeeklySchedule mostFlights,
-            WeeklySchedule bestEver,
             WeeklySchedule bestWithMostFlights)
         {
             Console.WriteLine($"Best by fitness: Fitness={bestFitness.FitnessScore:F4}, Flights={bestFitness.FlightAssignments.Where(fl=>fl.IsComplete()).Count()}");
-            Console.WriteLine($"Best by most flights: Fitness={mostFlights.FitnessScore:F4}, Flights={mostFlights.FlightAssignments.Where(fl => fl.IsComplete()).Count()}");
-            Console.WriteLine($"Best ever found: Fitness={bestEver.FitnessScore:F4}, Flights={bestEver.FlightAssignments.Where(fl => fl.IsComplete()).Count()}");
             Console.WriteLine($"Best with most flights: Fitness={bestWithMostFlights.FitnessScore:F4}, Flights={bestWithMostFlights.FlightAssignments.Where(fl => fl.IsComplete()).Count()}");
         }
 
@@ -965,7 +943,7 @@ namespace Scheduler.Core.Algorithms
             }
 
             // Add flight if it meets minimum staffing requirements
-            if (newAssignment.BusinessStewards.Any(s => s.IsSenior) && newAssignment.EconomyStewards.Any())
+            if (newAssignment.IsComplete())
             {
                 schedule.FlightAssignments.Add(newAssignment);
                 schedule.StewardSchedules = tempSchedules;

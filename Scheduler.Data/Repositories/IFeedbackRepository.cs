@@ -8,7 +8,6 @@ namespace Scheduler.Data.Repositories
 {
     public interface IFeedbackRepository : IRepository<Models.Feedback>
     {
-        Task<IEnumerable<Models.Feedback>> GetFeedbackByStewardAsync(int stewardId);
         Task<int> GetPositiveFeedbackCountAsync(int stewardId);
         Task<int> GetNegativeFeedbackCountAsync(int stewardId);
     }

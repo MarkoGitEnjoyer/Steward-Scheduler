@@ -18,10 +18,5 @@ namespace Scheduler.Data.Models
         public virtual ICollection<Flight> Flights { get; set; }
         public virtual ICollection<AircraftLicense> AircraftLicenses { get; set; }
 
-        public AircraftType()
-        {
-            Flights = new HashSet<Flight>();
-            AircraftLicenses = new HashSet<AircraftLicense>();
-        }
     }
 }

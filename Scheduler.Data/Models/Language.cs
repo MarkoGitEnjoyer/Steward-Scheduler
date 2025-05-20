@@ -17,10 +17,5 @@ namespace Scheduler.Data.Models
         public virtual ICollection<StewardLanguage> StewardLanguages { get; set; }
         public virtual ICollection<Flight> Flights { get; set; }
 
-        public Language()
-        {
-            StewardLanguages = new HashSet<StewardLanguage>();
-            Flights = new HashSet<Flight>();
-        }
     }
 }

@@ -12,7 +12,6 @@ namespace Scheduler.Core.Models
         public int StewardId { get; set; }
         public string FirstName { get; set; }
         public string LastName { get; set; }
-        public string FullName => $"{FirstName} {LastName}";
         public string Role { get; set; }
         public bool IsSenior { get; set; }
         public DateTime JoiningDate { get; set; }
@@ -36,11 +35,13 @@ namespace Scheduler.Core.Models
         /// </summary>
         public bool IsAvailable(DateTime flightDepartureTime, float flightDuration)
         {
+            // if he didnt fly yet he is available
             if (LastFlightEndTime == null)
                 return true;
 
-            // Ensure minimum rest period of 12 hours
+            // making a var that can be compared to datetime value
             TimeSpan restTime = TimeSpan.FromHours(12);
+            // checking if there is enough rest between 2 flights
             return flightDepartureTime - LastFlightEndTime.Value >= restTime;
         }
 
@@ -49,13 +50,13 @@ namespace Scheduler.Core.Models
         /// </summary>
         public bool IsAvailableForFlight(FlightDto flight, WeeklySchedule schedule)
         {
-            // Check hour limit
+            // Check hour limit (90hours)
             if (!IsWithinHourLimit(flight, schedule))
                 return false;
 
-            // Check basic availability based on rest time
-            if (!IsAvailable(flight.DepartureTime, flight.FlightTime))
-                return false;
+            // Check basic availability based on rest time ( in my project is not needed because i have only 1 week)
+            //if (!IsAvailable(flight.DepartureTime, flight.FlightTime))
+            //    return false;
 
             // Check aircraft license
             if (!HasLicenseForAircraft(flight.AircraftType))
@@ -65,7 +66,7 @@ namespace Scheduler.Core.Models
             if (!schedule.StewardSchedules.ContainsKey(StewardId))
                 return true;
 
-            // Check for conflicts with existing flights
+            // Check for conflicts with existing flights (like overlapping or rest time)
             return HasNoFlightConflicts(flight, schedule);
         }
 
@@ -74,12 +75,15 @@ namespace Scheduler.Core.Models
         /// </summary>
         private bool IsWithinHourLimit(FlightDto flight, WeeklySchedule schedule)
         {
+            // sum of hours = 0
             float currentScheduledHours = 0;
+            // if he has hours in this week add them
             if (schedule.StewardHours.ContainsKey(StewardId))
             {
                 currentScheduledHours = schedule.StewardHours[StewardId];
             }
 
+            // sum up his monthly+scheduled+new flight
             return (MonthlyHours + currentScheduledHours + flight.FlightTime <= 90);
         }
 
@@ -149,6 +153,7 @@ namespace Scheduler.Core.Models
             }
             else
             {
+                // means the flight doesnt require language and it always returns true
                 return true;
             }
         }

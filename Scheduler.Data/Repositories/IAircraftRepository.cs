@@ -8,8 +8,7 @@ namespace Scheduler.Data.Repositories
 {
     public interface IAircraftRepository : IRepository<Models.AircraftType>
     {
+        // get the id of aircraft by it's name in string
         Task<Models.AircraftType> GetAircraftTypeByNameAsync(string aircraftType);
-        Task<int> GetRequiredBusinessCrewAsync(string aircraftType);
-        Task<int> GetRequiredEconomyCrewAsync(string aircraftType);
     }
 }
