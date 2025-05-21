@@ -310,7 +310,7 @@ namespace Scheduler.Core.Algorithms
             }
             return workloadScore;
         }
-
+        
         #endregion
     }
 }
