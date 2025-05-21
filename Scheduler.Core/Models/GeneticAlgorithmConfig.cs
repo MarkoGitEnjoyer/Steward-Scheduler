@@ -8,7 +8,7 @@ namespace Scheduler.Core.Models
 {
     public class GeneticAlgorithmConfig
     {
-        public int PopulationSize { get; set; } = 50;
+        public int PopulationSize { get; set; } = 100;
 
         public int MaxGenerations { get; set; } = 500;
 
