@@ -71,15 +71,13 @@
 
     private void AdjustSelectedDateToMonday()
     {
-        int daysUntilMonday = ((int)model.SelectedDate.DayOfWeek - 1 + 7) % 7;
-        model.SelectedDate = model.SelectedDate.AddDays(-daysUntilMonday);
+        model.SelectedDate.AddDays(-(int)model.SelectedDate.DayOfWeek + 1);
     }
 
     private async Task StartGeneration()
     {
         try
         {
-            // Reset any previous state
             model.GenerationCompleted = false;
             model.ErrorMessage = null;
             model.IsLoading = true;
@@ -97,7 +95,6 @@
         finally
         {
             model.IsLoading = false;
-            // Ensure the UI updates
             StateHasChanged();
         }
     }

@@ -22,7 +22,6 @@ namespace Scheduler.UI.Controllers
                 // Get current week's start date (Monday)
                 var today = new DateTime(2025, 2, 17);
                 var currentWeekStart = today.AddDays(-(int)today.DayOfWeek + 1);
-                if (currentWeekStart.DayOfWeek == DayOfWeek.Sunday) currentWeekStart = currentWeekStart.AddDays(1);
 
                 // Load current schedule
                 var currentSchedule = await _schedulingService.GetScheduleForWeekAsync(currentWeekStart);
@@ -30,7 +29,7 @@ namespace Scheduler.UI.Controllers
                 if (currentSchedule != null)
                 {
                     // Calculate dashboard metrics
-                    viewModel.CurrentWeekFlights = currentSchedule.FlightAssignments.Count;
+                    viewModel.CurrentWeekFlights = currentSchedule.TotalFlightCount;
                     viewModel.AssignedFlights = currentSchedule.FlightAssignments.Count(fa => fa.IsComplete());
 
                     var allStewardIds = new HashSet<int>();

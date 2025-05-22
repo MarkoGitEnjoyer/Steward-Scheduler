@@ -25,31 +25,10 @@ namespace Scheduler.UI.Models
         public DateTime WeekStart { get; set; }
         public DateTime WeekEnd { get; set; }
         public List<FlightAssignmentViewModel> FlightAssignments { get; set; } = new();
-
-        // Fixed formatted week range calculation
-        public string FormattedWeekRange
-        {
-            get
-            {
-                try
-                {
-                    // Safely calculate the end of the week
-                    DateTime displayEndDate = WeekStart.AddDays(6);
-                    return $"{WeekStart:MMM dd} - {displayEndDate:MMM dd, yyyy}";
-                }
-                catch
-                {
-                    // Fallback if there's any issue with date calculations
-                    return $"{WeekStart:MMM dd, yyyy} week";
-                }
-            }
-        }
     }
 
     public class ScheduleGenerationViewModel : BaseViewModel
     {
-        [Required]
-        [Display(Name = "Week Start Date")]
         public DateTime SelectedDate { get; set; } = new DateTime(2025, 2, 17)  ;
 
         public bool GenerationCompleted { get; set; }
@@ -106,24 +85,6 @@ namespace Scheduler.UI.Models
         public StewardViewModel? SelectedSteward { get; set; }
         public DateTime WeekStart { get; set; }
         public List<FlightViewModel> ScheduledFlights { get; set; } = new();
-
-        // Safe implementation for formatted week range
-        public string FormattedWeekRange
-        {
-            get
-            {
-                try
-                {
-                    DateTime endDate = WeekStart.AddDays(6);
-                    return $"{WeekStart:MMM dd} - {endDate:MMM dd, yyyy}";
-                }
-                catch
-                {
-                    return $"{WeekStart:MMM yyyy} week";
-                }
-            }
-        }
-
         public List<StewardViewModel> AvailableStewards { get; set; } = new();
     }
 }

@@ -508,7 +508,6 @@ namespace Scheduler.Core.Algorithms
         {
             foreach (var steward in sourceStewards)
             {
-                // Use IsAvailableForFlight instead of CanStewardWorkFlight
                 if (!steward.IsAvailableForFlight(flight, child))
                 {
                     return false;
@@ -1231,7 +1230,9 @@ namespace Scheduler.Core.Algorithms
         {
             if (schedule.StewardSchedules.ContainsKey(stewardId))
             {
+                // get flights from steward schedule
                 var flights = schedule.StewardSchedules[stewardId];
+                // flight we need to remove
                 var flightToRemove = flights.FirstOrDefault(f => f.FlightId == flight.FlightId);
 
                 if (flightToRemove != null)

@@ -207,6 +207,7 @@ namespace Scheduler.Core.Services
                 WeekStart = weekStart,
                 WeekEnd = weekEnd
             };
+            schedule.TotalFlightCount = flights.Count;
 
             // Load flight assignments
             await LoadFlightAssignments(schedule, flights, stewardMap);

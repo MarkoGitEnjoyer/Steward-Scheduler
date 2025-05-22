@@ -103,7 +103,7 @@
                             <div class="progress mb-2" style="height: 20px;">
                                 <div class="progress-bar"
                                      role="progressbar"
-                                     style="width: @(Math.Min(100, model.SelectedSteward.MonthlyHours / 90 * 100))%;"
+                                     style="width: @(Math.Min(100, (model.SelectedSteward.MonthlyHours / 90) * 100))%;"
                                      aria-valuenow="@model.SelectedSteward.MonthlyHours"
                                      aria-valuemin="0"
                                      aria-valuemax="90">
@@ -148,7 +148,7 @@
 {
     <div class="card">
         <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
-            <h5 class="mb-0">Schedule for Week: @model.FormattedWeekRange</h5>
+            <h5 class="mb-0">Schedule for Week:</h5>
             <span class="badge bg-light text-dark">@model.ScheduledFlights.Count Flights</span>
         </div>
         <div class="card-body">
@@ -293,7 +293,6 @@ else if (!model.IsLoading && selectedStewardId > 0)
         <p>@model.ErrorMessage</p>
     </div>
 }
-
 <style>
     .flight-block {
         padding: 4px 8px;
@@ -341,8 +340,7 @@ else if (!model.IsLoading && selectedStewardId > 0)
         font-size: 0.7rem;
         color: #dc3545;
         margin-top: 2px;
-    }
-</style>
+    }</style>
 
 @code {
     private int selectedStewardId = 0;
@@ -357,14 +355,12 @@ else if (!model.IsLoading && selectedStewardId > 0)
 
     private async Task LoadStewardList()
     {
-        // Just load the list of stewards without a specific schedule
-        model = await StewardController.GetStewardScheduleAsync(0, selectedDate);
+        model = await StewardController.GetStewardScheduleAsync(1, selectedDate);
     }
 
     private void AdjustSelectedDateToMonday()
     {
-        int daysUntilMonday = ((int)selectedDate.DayOfWeek - 1 + 7) % 7;
-        selectedDate = selectedDate.AddDays(-daysUntilMonday);
+        selectedDate.AddDays(-(int)selectedDate.DayOfWeek + 1);
     }
 
     private void CurrentWeek()
@@ -381,7 +377,7 @@ else if (!model.IsLoading && selectedStewardId > 0)
         // Find the current index
         int currentIndex = model.AvailableStewards.FindIndex(s => s.StewardId == selectedStewardId);
 
-        // If not found or at the end, go to the first steward
+        // If not found or at the end go to the first steward
         if (currentIndex == -1 || currentIndex == model.AvailableStewards.Count - 1)
             selectedStewardId = model.AvailableStewards.First().StewardId;
         else

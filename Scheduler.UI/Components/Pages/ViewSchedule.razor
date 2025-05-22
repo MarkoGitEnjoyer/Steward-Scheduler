@@ -33,7 +33,7 @@
 
 <div class="card mb-4">
     <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-        <h5 class="mb-0">Schedule: @model.FormattedWeekRange</h5>
+        <h5 class="mb-0">Schedule</h5>
     </div>
     <div class="card-body">
         @if (model.IsLoading)
@@ -376,7 +376,6 @@
 
     protected override async Task OnInitializedAsync()
     {
-        // Set selected date to current week's Monday
         AdjustSelectedDateToMonday();
         selectedDay = selectedDate;
 
@@ -385,8 +384,7 @@
 
     private void AdjustSelectedDateToMonday()
     {
-        int daysUntilMonday = ((int)selectedDate.DayOfWeek - 1 + 7) % 7;
-        selectedDate = selectedDate.AddDays(-daysUntilMonday);
+        selectedDate.AddDays(-(int)selectedDate.DayOfWeek + 1);
     }
 
     private async Task LoadSchedule()

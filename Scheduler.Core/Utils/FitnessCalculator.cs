@@ -126,7 +126,7 @@ namespace Scheduler.Core.Utils
                     {
                         totalStewardAssignments++;
 
-                        if(steward.DoesSpeakLanguage(requiredLanguageId))
+                        if (steward.DoesSpeakLanguage(requiredLanguageId))
                         {
                             matchedStewardAssignments++;
                         }
@@ -169,15 +169,25 @@ namespace Scheduler.Core.Utils
             if (assignment == null || assignment.Flight == null)
                 return 0.0f;
 
-            // making priority from 0.2 to 1
-            float flightImportance = Math.Clamp(assignment.Flight.Priority / 5.0f, 0.0f, 1.0f);
+            // making priority from 0.2 to 1
+            float flightImportance = Math.Clamp(assignment.Flight.Priority / 5.0f, 0.0f, 1.0f);
 
             float stewardQuality = CalculateAverageStewardQuality(assignment);
 
-            // calculating how much quality of steward matches the flight
-            float matchFactor = 1.0f - Math.Abs(flightImportance - stewardQuality);
+            // calculating how much quality of steward matches the flight
+            float matchFactor = 1.0f - Math.Abs(flightImportance - stewardQuality);
 
-            return matchFactor;
+            // the minimum score we would apply bonus
+            float matchBonusThreshold = 0.6f;
+
+            // the quadratic root exponent to apply bonus
+            float matchScoreExponent = 0.5f;
+
+            // applying bonus if score is higher than the limit
+            float finalScore = matchFactor > matchBonusThreshold ? (float)Math.Pow(matchFactor, matchScoreExponent) : matchFactor;
+
+            return Math.Clamp(finalScore, 0.0f, 1.0f);
+
         }
 
         private static float CalculateAverageStewardQuality(FlightAssignment assignment)
@@ -197,6 +207,5 @@ namespace Scheduler.Core.Utils
             return (avgExperience + avgFeedback) / 2.0f;
         }
 
-       
     }
 }

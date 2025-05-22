@@ -58,7 +58,6 @@ namespace Scheduler.UI.Controllers
 
                         // Get steward's languages IDs and names for display
                         var stewardLanguageIds = await _unitOfWork.Stewards.GetStewardLanguageIdsAsync(steward.StewardId);
-                        viewModel.SelectedSteward.LanguageIds = stewardLanguageIds.ToList();
                         viewModel.SelectedSteward.Languages = (await _unitOfWork.Stewards.GetStewardLanguageNamesAsync(steward.StewardId)).ToList();
 
                         // Get steward's licenses names for display
@@ -103,7 +102,7 @@ namespace Scheduler.UI.Controllers
                                 RequiredBusinessCrew = f.RequiredBusinessCrew,
                                 RequiredEconomyCrew = f.RequiredEconomyCrew,
                                 StewardSpeaksLanguage = !f.RequiredLanguageId.HasValue ||
-                                    viewModel.SelectedSteward.LanguageIds.Contains(f.RequiredLanguageId.Value)
+                                    viewModel.SelectedSteward.Languages.Contains(langName)
                             };
                         }).ToList();
                     }
@@ -123,8 +122,7 @@ namespace Scheduler.UI.Controllers
 
         private DateTime AdjustToMonday(DateTime date)
         {
-            int daysUntilMonday = ((int)date.DayOfWeek - 1 + 7) % 7;
-            return date.AddDays(-daysUntilMonday);
+            return date.AddDays(-(int)date.DayOfWeek + 1);
         }
     }
 }

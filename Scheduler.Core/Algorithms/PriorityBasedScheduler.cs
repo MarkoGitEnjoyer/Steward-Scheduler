@@ -289,7 +289,16 @@ namespace Scheduler.Core.Algorithms
             // calculating how much quality of steward matches the flight
             float matchFactor = 1.0f - Math.Abs(qualityScore - priorityFactor);
 
-            return matchFactor;
+            // the minimum score we would apply bonus
+            float matchBonusThreshold = 0.6f;
+
+            // the quadratic root exponent to apply bonus
+            float matchScoreExponent = 0.5f;
+
+            // applying bonus if score is higher than the limit
+            float finalScore = matchFactor > matchBonusThreshold ? (float)Math.Pow(matchFactor, matchScoreExponent) : matchFactor;
+
+            return Math.Clamp(finalScore, 0.0f, 1.0f);
         }
 
         // function to calculate score for workload based on avg month hours

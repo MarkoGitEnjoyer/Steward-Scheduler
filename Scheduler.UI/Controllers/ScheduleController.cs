@@ -63,8 +63,7 @@ namespace Scheduler.UI.Controllers
 
         private DateTime AdjustToMonday(DateTime date)
         {
-            int daysUntilMonday = ((int)date.DayOfWeek - 1 + 7) % 7;
-            return date.AddDays(-daysUntilMonday);
+            return date.AddDays(-(int)date.DayOfWeek + 1);
         }
 
         private FlightAssignmentViewModel MapFlightAssignmentToViewModel(FlightAssignment assignment)
