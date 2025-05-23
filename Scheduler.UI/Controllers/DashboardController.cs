@@ -19,16 +19,16 @@ namespace Scheduler.UI.Controllers
 
             try
             {
-                // Get current week's start date (Monday)
+                // get current week's start date (Monday)
                 var today = new DateTime(2025, 2, 17);
                 var currentWeekStart = today.AddDays(-(int)today.DayOfWeek + 1);
 
-                // Load current schedule
+                // load current schedule
                 var currentSchedule = await _schedulingService.GetScheduleForWeekAsync(currentWeekStart);
 
                 if (currentSchedule != null)
                 {
-                    // Calculate dashboard metrics
+                    // calculate dashboard metrics
                     viewModel.CurrentWeekFlights = currentSchedule.TotalFlightCount;
                     viewModel.AssignedFlights = currentSchedule.FlightAssignments.Count(fa => fa.IsComplete());
 
@@ -44,7 +44,7 @@ namespace Scheduler.UI.Controllers
 
                     viewModel.ActiveStewards = allStewardIds.Count;
 
-                    // Get upcoming flights (next 24 hours)
+                    // get upcoming flights (next 24 hours)
                     var nextDay = today.AddDays(1);
                     viewModel.UpcomingFlights = currentSchedule.FlightAssignments
                         .Where(fa => fa.Flight.DepartureTime >= today && fa.Flight.DepartureTime <= nextDay)

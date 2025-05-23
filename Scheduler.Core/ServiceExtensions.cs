@@ -12,7 +12,6 @@ namespace Scheduler.Core
     {
         public static IServiceCollection AddCoreServices(this IServiceCollection services)
         {
-            // Register services
             services.AddScoped<ISchedulingService, SchedulingService>();
 
             return services;

@@ -41,38 +41,11 @@ namespace Scheduler.Data.Implementations
             await _dbSet.AddAsync(entity);
         }
 
-        public virtual async Task AddRangeAsync(IEnumerable<T> entities)
-        {
-            await _dbSet.AddRangeAsync(entities);
-        }
-
-        public virtual Task UpdateAsync(T entity)
-        {
-            _dbSet.Attach(entity);
-            _context.Entry(entity).State = EntityState.Modified;
-            return Task.CompletedTask;
-        }
-
         public virtual Task RemoveAsync(T entity)
         {
             _dbSet.Remove(entity);
             return Task.CompletedTask;
         }
 
-        public virtual Task RemoveRangeAsync(IEnumerable<T> entities)
-        {
-            _dbSet.RemoveRange(entities);
-            return Task.CompletedTask;
-        }
-
-        public virtual async Task<int> CountAsync()
-        {
-            return await _dbSet.CountAsync();
-        }
-
-        public virtual async Task<int> SaveChangesAsync()
-        {
-            return await _context.SaveChangesAsync();
-        }
     }
 }

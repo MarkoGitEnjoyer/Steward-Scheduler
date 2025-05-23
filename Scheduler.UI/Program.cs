@@ -5,15 +5,12 @@ using Scheduler.UI.Controllers;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
-// Add Scheduler.Data and Scheduler.Core services
 builder.Services.AddDataLayer(builder.Configuration);
 builder.Services.AddCoreServices();
 
-// Register MVC controllers
 builder.Services.AddScoped<DashboardController>();
 builder.Services.AddScoped<ScheduleController>();
 builder.Services.AddScoped<StewardController>();

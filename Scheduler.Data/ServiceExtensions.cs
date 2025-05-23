@@ -16,7 +16,7 @@ namespace Scheduler.Data
     {
         public static IServiceCollection AddDataLayer(this IServiceCollection services, IConfiguration configuration)
         {
-            // Configure DbContext with MySQL
+            // configure DbContext with MySQL
             services.AddDbContext<SchedulerDbContext>(options =>
                 options.UseMySql(
                     configuration.GetConnectionString("DefaultConnection"),
@@ -24,7 +24,7 @@ namespace Scheduler.Data
                 )
             );
 
-            // Register repositories
+            // register repositories
             services.AddScoped<IStewardRepository, StewardRepository>();
             services.AddScoped<IFlightRepository, FlightRepository>();
             services.AddScoped<IAssignmentRepository, AssignmentRepository>();
@@ -32,7 +32,7 @@ namespace Scheduler.Data
             services.AddScoped<IAircraftRepository, AircraftRepository>();
             services.AddScoped<ILanguageRepository, LanguageRepository>();
 
-            // Register UnitOfWork
+            // register UnitOfWork
             services.AddScoped<IUnitOfWork, UnitOfWork>();
 
             return services;

@@ -19,12 +19,12 @@ namespace Scheduler.UI.Controllers
 
             try
             {
-                // Normalize to the start of the week (Monday)
+                // normalize to the start of the week (Monday)
                 weekStart = AdjustToMonday(weekStart);
                 viewModel.WeekStart = weekStart;
                 viewModel.WeekEnd = weekStart.AddDays(7);
 
-                // Load the schedule for the selected week
+                // load the schedule for the selected week
                 var schedule = await _schedulingService.GetScheduleForWeekAsync(weekStart);
 
                 if (schedule != null)
@@ -48,16 +48,16 @@ namespace Scheduler.UI.Controllers
 
         public async Task<bool> GenerateScheduleAsync(DateTime selectedDate)
         {
-            // Adjust to Monday of the selected week
+            // adjust to Monday of the selected week
             selectedDate = AdjustToMonday(selectedDate);
 
-            // Generate the schedule
+            // generate the schedule
             var generatedSchedule = await _schedulingService.GenerateWeeklyScheduleAsync(selectedDate);
 
-            // Save the generated schedule
+            // save the generated schedule
             await _schedulingService.SaveScheduleAsync(generatedSchedule);
 
-            // Return success
+            // return success
             return true;
         }
 

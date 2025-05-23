@@ -21,11 +21,11 @@ namespace Scheduler.UI.Controllers
 
             try
             {
-                // Adjust to Monday of the selected week
+                // adjust to Monday of the selected week
                 weekStart = AdjustToMonday(weekStart);
                 viewModel.WeekStart = weekStart;
 
-                // Load all stewards for the dropdown
+                // load all stewards for the dropdown
                 var stewards = await _unitOfWork.Stewards.GetAllAsync();
                 viewModel.AvailableStewards = stewards.Select(s => new StewardViewModel
                 {
@@ -35,14 +35,14 @@ namespace Scheduler.UI.Controllers
                     Role = s.Role.ToString()
                 }).ToList();
 
-                // If a steward is selected
+                // if a steward is selected
                 if (stewardId > 0)
                 {
-                    // Load steward details
+                    // load steward details
                     var steward = await _unitOfWork.Stewards.GetByIdAsync(stewardId);
                     if (steward != null)
                     {
-                        // Map to ViewModel
+                        // map to ViewModel
                         viewModel.SelectedSteward = new StewardViewModel
                         {
                             StewardId = steward.StewardId,
@@ -56,21 +56,21 @@ namespace Scheduler.UI.Controllers
                             ExperienceYears = (float)(new DateTime(2025, 2, 17) - steward.JoiningDate).TotalDays / 365
                         };
 
-                        // Get steward's languages IDs and names for display
+                        // get steward's languages IDs and names for display
                         var stewardLanguageIds = await _unitOfWork.Stewards.GetStewardLanguageIdsAsync(steward.StewardId);
                         viewModel.SelectedSteward.Languages = (await _unitOfWork.Stewards.GetStewardLanguageNamesAsync(steward.StewardId)).ToList();
 
-                        // Get steward's licenses names for display
+                        // get steward's licenses names for display
                         viewModel.SelectedSteward.Licenses = (await _unitOfWork.Stewards.GetStewardLicenseNamesAsync(steward.StewardId)).ToList();
 
-                        // Get feedback counts
+                        // get feedback counts
                         viewModel.SelectedSteward.PositiveFeedbackCount = await _unitOfWork.Feedbacks.GetPositiveFeedbackCountAsync(steward.StewardId);
                         viewModel.SelectedSteward.NegativeFeedbackCount = await _unitOfWork.Feedbacks.GetNegativeFeedbackCountAsync(steward.StewardId);
 
-                        // Load the steward's schedule for the selected week
+                        // load the steward's schedule for the selected week
                         var flights = await _schedulingService.GetStewardScheduleAsync(stewardId, weekStart);
 
-                        // Load language information
+                        // load language information
                         var languageNamesMap = new Dictionary<int, string>();
                         var allLanguages = await _unitOfWork.Languages.GetAllAsync();
                         foreach (var lang in allLanguages)
@@ -78,7 +78,7 @@ namespace Scheduler.UI.Controllers
                             languageNamesMap[lang.LanguageId] = lang.LanguageName;
                         }
 
-                        // Create flight view models with language info
+                        // create flight view models with language info
                         viewModel.ScheduledFlights = flights.Select(f =>
                         {
                             string langName = "";

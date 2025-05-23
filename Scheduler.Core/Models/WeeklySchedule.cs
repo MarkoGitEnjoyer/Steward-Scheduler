@@ -14,12 +14,12 @@ namespace Scheduler.Core.Models
         public List<FlightAssignment> FlightAssignments { get; set; } = new List<FlightAssignment>();
         public Dictionary<int, List<FlightDto>> StewardSchedules { get; set; } = new Dictionary<int, List<FlightDto>>();
 
-        // Track steward hours in this schedule
+        // track steward hours in this schedule
         public Dictionary<int, float> StewardHours { get; set; } = new Dictionary<int, float>();
 
         public int TotalFlightCount { get; set; }
 
-        // Fitness score for genetic algorithm
+        // fitness score for genetic algorithm
         public float FitnessScore { get; set; }
 
         public static WeeklySchedule InitializeSchedule(DateTime weekStart)
@@ -33,7 +33,7 @@ namespace Scheduler.Core.Models
 
         #region Hour Management Methods
         /// <summary>
-        /// Add hours to a steward's schedule - return success/failure
+        /// add hours to a steward's schedule
         /// </summary>
         public bool AddStewardHours(int stewardId, float hours)
         {
@@ -47,7 +47,7 @@ namespace Scheduler.Core.Models
         }
 
         /// <summary>
-        /// Remove hours from a steward's schedule
+        /// remove hours from a steward's schedule
         /// </summary>
         public void RemoveStewardHours(int stewardId, float hours)
         {
@@ -62,7 +62,7 @@ namespace Scheduler.Core.Models
         }
 
         /// <summary>
-        /// Get a steward's current scheduled hours
+        /// get a steward's current scheduled hours
         /// </summary>
         public float GetStewardScheduledHours(int stewardId)
         {
@@ -78,7 +78,7 @@ namespace Scheduler.Core.Models
         #region Validation Methods
 
         /// <summary>
-        /// Verify that no steward exceeds 90 hours
+        /// verify that no steward exceeds 90 hours
         /// </summary>
         public bool VerifyHourConstraints(List<StewardDto> stewards = null)
         {
@@ -95,7 +95,7 @@ namespace Scheduler.Core.Models
                     // if it finds steward in dictionary we did before we can use it in {} block
                     if (stewardMap.TryGetValue(stewardId, out var steward))
                     {
-                        // Calculate total hours (base + scheduled)
+                        // calculate total hours (base + scheduled)
                         float totalHours = steward.MonthlyHours + scheduledHours;
 
                         if (totalHours > MAX_HOURS_LIMIT)
@@ -111,7 +111,7 @@ namespace Scheduler.Core.Models
         }
 
         /// <summary>
-        /// Validate that a schedule respects all constraints
+        /// validate that a schedule respects all constraints
         /// </summary>
         public bool ValidateSchedule()
         {
@@ -123,16 +123,16 @@ namespace Scheduler.Core.Models
         }
 
         /// <summary>
-        /// Check if there are any overlapping flights in the schedule
+        /// check if there are any overlapping flights in the schedule
         /// </summary>
         public bool HasOverlappingFlightsOrRestTime()
         {
-            // Check each steward's schedule for overlapping flights
+            // check each steward's schedule for overlapping flights
             foreach (var kvp in StewardSchedules)
             {
                 var flights = kvp.Value;
 
-                // Sort flights by departure time
+                // sort flights by departure time
                 var orderedFlights = flights.OrderBy(f => f.DepartureTime).ToList();
 
                 // Check for overlaps
@@ -146,7 +146,7 @@ namespace Scheduler.Core.Models
                         }
                         TimeSpan restTime = orderedFlights[j].DepartureTime - orderedFlights[i].ArrivalTime;
 
-                        // Check if rest time is less than 12 hours
+                        // check if rest time is less than 12 hours
                         if (restTime.TotalHours < 12)
                         {
                             return true;
@@ -190,7 +190,7 @@ namespace Scheduler.Core.Models
         #region Clone Methods
 
         /// <summary>
-        /// Clone method for genetic operations
+        /// clone method for genetic operations
         /// </summary>
         public WeeklySchedule Clone()
         {
@@ -202,20 +202,20 @@ namespace Scheduler.Core.Models
                 TotalFlightCount = this.TotalFlightCount
             };
 
-            // Clone flight assignments
+            // clone flight assignments
             CloneFlightAssignments(clone);
 
-            // Clone steward schedules
+            // clone steward schedules
             CloneStewardSchedules(clone);
 
-            // Clone steward hours
+            // clone steward hours
             CloneStewardHours(clone);
 
             return clone;
         }
 
         /// <summary>
-        /// Clone flight assignments to the target schedule
+        /// clone flight assignments to the target schedule
         /// </summary>
         private void CloneFlightAssignments(WeeklySchedule clone)
         {
@@ -234,7 +234,7 @@ namespace Scheduler.Core.Models
         }
 
         /// <summary>
-        /// Clone steward schedules to the target schedule
+        /// clone steward schedules to the target schedule
         /// </summary>
         private void CloneStewardSchedules(WeeklySchedule clone)
         {
@@ -245,7 +245,7 @@ namespace Scheduler.Core.Models
         }
 
         /// <summary>
-        /// Clone steward hours to the target schedule
+        /// clone steward hours to the target schedule
         /// </summary>
         private void CloneStewardHours(WeeklySchedule clone)
         {

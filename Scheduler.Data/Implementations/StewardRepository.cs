@@ -64,15 +64,10 @@ namespace Scheduler.Data.Implementations
 
         public async Task<IEnumerable<int>> GetStewardLicenseIdsAsync(int stewardId)
         {
-            // First get the steward's license IDs
-            var licenses = await _context.StewardLicenses
+            return await _context.StewardLicenses
                 .Where(sl => sl.StewardId == stewardId)
                 .Select(sl => sl.LicenseId)
                 .ToListAsync();
-
-            // Then get the corresponding aircraft types for these licenses
-            // We'll return the license IDs for direct comparison
-            return licenses;
         }
 
 

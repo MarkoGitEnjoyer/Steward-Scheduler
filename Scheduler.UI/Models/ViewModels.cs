@@ -3,14 +3,14 @@ using System.ComponentModel.DataAnnotations;
 
 namespace Scheduler.UI.Models
 {
-    // Base class for view models with common properties
+    // base class for view models with common properties
     public abstract class BaseViewModel
     {
         public bool IsLoading { get; set; }
         public string? ErrorMessage { get; set; }
     }
 
-    // Dashboard view models
+    // dashboard view models
     public class DashboardViewModel : BaseViewModel
     {
         public int CurrentWeekFlights { get; set; }
@@ -19,7 +19,7 @@ namespace Scheduler.UI.Models
         public List<FlightViewModel> UpcomingFlights { get; set; } = new();
     }
 
-    // Schedule view models
+    // schedule view models
     public class ScheduleViewModel : BaseViewModel
     {
         public DateTime WeekStart { get; set; }

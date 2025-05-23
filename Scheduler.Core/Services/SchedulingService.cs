@@ -20,24 +20,24 @@ namespace Scheduler.Core.Services
             _unitOfWork = unitOfWork;
         }
 
-        // Generate a weekly schedule
+        // generate a weekly schedule
         public async Task<WeeklySchedule> GenerateWeeklyScheduleAsync(DateTime weekStart)
         {
-            // Normalize to the start of the week (Monday)
+            // normalize to the start of the week (Monday)
             weekStart = NormalizeToWeekStart(weekStart);
 
-            // Get all flights for the week
+            // get all flights for the week
             var flights = await GetFlightsForWeekAsync(weekStart);
 
-            // Get all stewards with their current monthly hours
+            // get all stewards with their current monthly hours
             var stewards = await GetAllStewardsWithDetailsAsync(weekStart);
 
             Console.WriteLine($"Generating schedule with {stewards.Count} stewards and {flights.Count} flights.");
 
-            // Generate schedule using genetic algorithm directly
+            // generate schedule using genetic algorithm directly
             var optimizedSchedule = GenerateScheduleWithGA(flights, stewards, weekStart);
 
-            // Report final stats
+            // report final stats
             Console.WriteLine($"Final schedule: {optimizedSchedule.FlightAssignments.Where(fl => fl.IsComplete()).Count()} flights scheduled");
 
             return optimizedSchedule;
@@ -61,29 +61,29 @@ namespace Scheduler.Core.Services
             return geneticScheduler.OptimizeSchedule(flights, stewards, weekStart);
         }
 
-        // Save a generated schedule to the database
+        // save a generated schedule to the database
         public async Task<bool> SaveScheduleAsync(WeeklySchedule schedule)
         {
             try
             {
-                // Get the month for this scheduling period
+                // get the month for this scheduling period
                 int scheduleMonth = schedule.WeekStart.Month;
                 int scheduleYear = schedule.WeekStart.Year;
 
                 Console.WriteLine($"Validating schedule for month: {scheduleYear}-{scheduleMonth}");
                 Console.WriteLine($"Schedule contains {schedule.FlightAssignments.Where(fl=>fl.IsComplete()).Count()} flight assignments");
 
-                // Clear existing assignments and create new ones
+                // clear existing assignments and create new ones
                 await ClearAndCreateNewAssignments(schedule);
 
-                // Save all changes
+                // save all changes
                 int changes = await _unitOfWork.CompleteAsync();
                 Console.WriteLine($"Successfully saved {changes} changes to database.");
                 return true;
             }
             catch (Exception ex)
             {
-                // Log the exception
+                // log the exception
                 LogException(ex);
                 return false;
             }
@@ -92,20 +92,20 @@ namespace Scheduler.Core.Services
       
         private async Task ClearAndCreateNewAssignments(WeeklySchedule schedule)
         {
-            // Clear all existing assignments for the week
+            // ccear all existing assignments for the week
             var weekStart = schedule.WeekStart;
             var weekEnd = schedule.WeekEnd;
 
             Console.WriteLine($"Clearing all existing flight assignments for the week {weekStart:yyyy-MM-dd} to {weekEnd:yyyy-MM-dd}...");
 
-            // Get all flights for the week
+            // get all flights for the week
             var weeklyFlights = await _unitOfWork.Flights.GetFlightsForAWeek(weekStart);
 
             var weeklyFlightIds = weeklyFlights.Select(f => f.FlightId).ToList();
 
             Console.WriteLine($"Found {weeklyFlightIds.Count} flights for the week");
 
-            // Get and remove all assignments for these flights
+            // get and remove all assignments for these flights
             var existingAssignments = await _unitOfWork.Assignments.FindAsync(a => weeklyFlightIds.Contains(a.FlightId));
 
             Console.WriteLine($"Found {existingAssignments.Count()} existing assignments to remove");
@@ -114,7 +114,7 @@ namespace Scheduler.Core.Services
                 await _unitOfWork.Assignments.RemoveAsync(assignment);
             }
 
-            // Create new assignments
+            // create new assignments
             Console.WriteLine("Creating new assignments...");
             int assignmentCount = await CreateNewAssignments(schedule);
 
@@ -130,7 +130,7 @@ namespace Scheduler.Core.Services
                 var month = flightAssignment.Flight.DepartureTime.Month;
                 var year = flightAssignment.Flight.DepartureTime.Year;
 
-                // Add stewards
+                // add stewards
                 assignmentCount += await CreateStewardAssignments(
                     flightAssignment.BusinessStewards.Concat(flightAssignment.EconomyStewards).ToList(),
                     flightAssignment.Flight,
@@ -162,14 +162,14 @@ namespace Scheduler.Core.Services
                     await _unitOfWork.Assignments.AddAsync(assignment);
                     count++;
 
-                    // Update the steward's monthly hours
+                    // update the steward's monthly hours
                     await _unitOfWork.Stewards.UpdateMonthlyHoursAsync(
                         steward.StewardId,
                         year,
                         month,
                         flight.FlightTime);
 
-                    // Update last flight end time
+                    // update last flight end time
                     await _unitOfWork.Stewards.UpdateLastFlightTimeAsync(
                         steward.StewardId,
                         flight.ArrivalTime);
@@ -189,19 +189,19 @@ namespace Scheduler.Core.Services
             Console.WriteLine($"ERROR saving schedule: {ex.Message}");
         }
 
-        // Get a previously saved schedule for a week
+        // get a previously saved schedule for a week
         public async Task<WeeklySchedule> GetScheduleForWeekAsync(DateTime weekStart)
         {
-            // Normalize to the start of the week (Monday)
+            // normalize to the start of the week (Monday)
             weekStart = NormalizeToWeekStart(weekStart);
             var weekEnd = weekStart.AddDays(7);
 
-            // Get all flights and stewards for the week
+            // get all flights and stewards for the week
             var flights = await GetFlightsForWeekAsync(weekStart);
             var stewards = await GetAllStewardsWithDetailsAsync(weekStart);
             var stewardMap = stewards.ToDictionary(s => s.StewardId);
 
-            // Create schedule
+            // create schedule
             var schedule = new WeeklySchedule
             {
                 WeekStart = weekStart,
@@ -209,10 +209,10 @@ namespace Scheduler.Core.Services
             };
             schedule.TotalFlightCount = flights.Count;
 
-            // Load flight assignments
+            // load flight assignments
             await LoadFlightAssignments(schedule, flights, stewardMap);
 
-            // Calculate fitness score
+            // calculate fitness score
             schedule.FitnessScore = FitnessCalculator.CalculateScheduleFitness(schedule, stewards);
 
             return schedule;
@@ -227,10 +227,10 @@ namespace Scheduler.Core.Services
             {
                 var flightAssignment = new FlightAssignment { Flight = flight };
 
-                // Get stewards assigned to this flight
+                // get stewards assigned to this flight
                 var assignments = await _unitOfWork.Assignments.GetAssignmentsByFlightAsync(flight.FlightId);
 
-                // Add stewards to the assignment
+                // add stewards to the assignment
                 ProcessFlightAssignments(assignments, flightAssignment, stewardMap, schedule, flight);
 
                 schedule.FlightAssignments.Add(flightAssignment);
@@ -248,7 +248,7 @@ namespace Scheduler.Core.Services
             {
                 if (stewardMap.TryGetValue(assignment.StewardId, out var steward))
                 {
-                    // Add to the correct steward category
+                    // add to the correct steward category
                     if (steward.Role == "Business")
                     {
                         flightAssignment.BusinessStewards.Add(steward);
@@ -258,7 +258,7 @@ namespace Scheduler.Core.Services
                         flightAssignment.EconomyStewards.Add(steward);
                     }
 
-                    // Update steward's schedule
+                    // update steward's schedule
                     UpdateStewardScheduleInformation(steward, flight, schedule);
                 }
             }
@@ -269,27 +269,27 @@ namespace Scheduler.Core.Services
             FlightDto flight,
             WeeklySchedule schedule)
         {
-            // Add to steward's schedule
+            // add to steward's schedule
             if (!schedule.StewardSchedules.ContainsKey(steward.StewardId))
                 schedule.StewardSchedules[steward.StewardId] = new List<FlightDto>();
 
             schedule.StewardSchedules[steward.StewardId].Add(flight);
 
-            // Add flight hours to schedule tracking
+            // add flight hours to schedule tracking
             schedule.AddStewardHours(steward.StewardId, flight.FlightTime);
         }
 
-        // Get a steward's schedule for a specific week
+        // get a steward's schedule for a specific week
         public async Task<List<FlightDto>> GetStewardScheduleAsync(int stewardId, DateTime weekStart)
         {
-            // Normalize to the start of the week (Monday)
+            // normalize to the start of the week (Monday)
             weekStart = NormalizeToWeekStart(weekStart);
             var weekEnd = weekStart.AddDays(7);
 
-            // Get steward assignments
+            // get steward assignments
             var assignments = await _unitOfWork.Assignments.GetAssignmentsByStewardAsync(stewardId);
 
-            // Filter to this week and map to flight DTOs
+            // filter to this week and map to flight DTOs
             var flights = assignments
                 .Where(a => a.Flight.DepartureTime >= weekStart && a.Flight.DepartureTime < weekEnd)
                 .Select(a => MapFlightToDto(a.Flight))
@@ -299,11 +299,11 @@ namespace Scheduler.Core.Services
             return flights;
         }
 
-        // Helper methods for data access
+        // helper methods for data access
 
         private async Task<List<FlightDto>> GetFlightsForWeekAsync(DateTime weekStart)
         {
-            // Get all flights departing within the week
+            // get all flights departing within the week
             var flights = await _unitOfWork.Flights.GetFlightsForAWeek(weekStart);
 
             var flightDtos = new List<FlightDto>();
@@ -320,28 +320,13 @@ namespace Scheduler.Core.Services
 
         private async Task LoadFlightCrewRequirements(Flight flight, FlightDto dto)
         {
-            // Get required crew counts from aircraft
-            if (flight.Aircraft != null)
-            {
-                dto.RequiredBusinessCrew = flight.Aircraft.BusinessClassCrew;
-                dto.RequiredEconomyCrew = flight.Aircraft.EconomyClassCrew;
-            }
-            else
-            {
-                // Fallback if aircraft data is missing
-                var aircraft = await _unitOfWork.AircraftTypes.GetAircraftTypeByNameAsync(flight.AircraftType);
-                if (aircraft != null)
-                {
+             var aircraft = await _unitOfWork.AircraftTypes.GetAircraftTypeByNameAsync(flight.AircraftType);
+             if (aircraft != null)
+               {
                     dto.RequiredBusinessCrew = aircraft.BusinessClassCrew;
                     dto.RequiredEconomyCrew = aircraft.EconomyClassCrew;
-                }
-                else
-                {
-                    // Default values if aircraft not found
-                    dto.RequiredBusinessCrew = 2;
-                    dto.RequiredEconomyCrew = 3;
-                }
-            }
+               }
+         
         }
 
         private async Task<List<StewardDto>> GetAllStewardsWithDetailsAsync(DateTime weekStart)
@@ -349,7 +334,7 @@ namespace Scheduler.Core.Services
             var stewards = await _unitOfWork.Stewards.GetAllAsync();
             var dtos = new List<StewardDto>();
 
-            // Determine which month we need to load (the month of the start date)
+            // determine which month we need to load (the month of the start date)
             int year = weekStart.Year;
             int month = weekStart.Month;
 
@@ -357,7 +342,7 @@ namespace Scheduler.Core.Services
             {
                 var dto = MapStewardToDto(steward);
 
-                // Load additional steward information
+                // load additional steward information
                 await LoadStewardDetails(dto, steward.StewardId, year, month);
 
                 dtos.Add(dto);
@@ -382,22 +367,22 @@ namespace Scheduler.Core.Services
 
         private async Task LoadStewardDetails(StewardDto dto, int stewardId, int year, int month)
         {
-            // Load hours for the current month
+            // load hours for the current month
             float monthlyHours = await _unitOfWork.Stewards.GetMonthlyHoursAsync(stewardId, year, month);
             dto.MonthlyHours = monthlyHours;
 
-            // Get license IDs
+            // get license IDs
             var licenseIds = await _unitOfWork.Stewards.GetStewardLicenseIdsAsync(stewardId);
             dto.LicenseIds = licenseIds.ToList();
 
-            // Get language IDs
+            // get language IDs
             var languageIds = await _unitOfWork.Stewards.GetStewardLanguageIdsAsync(stewardId);
             dto.LanguageIds = languageIds.ToList();
 
             var licenseNames = await _unitOfWork.Stewards.GetStewardLicenseNamesAsync(stewardId);
             dto.LicensedAircraftTypes = licenseNames.ToList();
 
-            // Get feedback counts
+            // get feedback counts
             var positiveFeedbackCount = await _unitOfWork.Feedbacks.GetPositiveFeedbackCountAsync(stewardId);
             dto.PositiveFeedbackCount = positiveFeedbackCount;
             var negativeFeedbackCount = await _unitOfWork.Feedbacks.GetNegativeFeedbackCountAsync(stewardId);

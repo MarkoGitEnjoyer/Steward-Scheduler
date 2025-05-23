@@ -13,25 +13,25 @@ namespace Scheduler.Core.Models
         public float WorkloadBalanceWeight { get; set; } = 0.25f;
         public float LanguageWeight { get; set; } = 0.25f;
 
-        // Generate variations for initial population
+        // generate variations for initial population
         public static List<SchedulingWeights> GenerateVariations(int count = 5)
         {
             var variations = new List<SchedulingWeights>();
             var random = new Random();
 
-            // Add default weights
+            // add default weights
             variations.Add(new SchedulingWeights());
 
-            // Generate additional random variations if needed
+            // generate additional random variations
             for (int i = variations.Count; i < count; i++)
             {
                 // Generate random weights
-                float e = (float)random.NextDouble() * 0.7f + 0.1f; // Between 0.1 and 0.8
+                float e = (float)random.NextDouble() * 0.7f + 0.1f; // between 0.1 and 0.8
                 float f = (float)random.NextDouble() * 0.7f + 0.1f;
                 float w = (float)random.NextDouble() * 0.7f + 0.1f;
                 float l = (float)random.NextDouble() * 0.7f + 0.1f;
 
-                // Normalize to sum to 1
+                // normalize to sum to 1
                 float sum = e + f + w + l;
 
                 variations.Add(new SchedulingWeights

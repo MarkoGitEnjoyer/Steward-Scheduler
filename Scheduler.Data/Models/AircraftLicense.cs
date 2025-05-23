@@ -17,7 +17,7 @@ namespace Scheduler.Data.Models
         [ForeignKey("AircraftTypeId")]
         public virtual AircraftType AircraftType { get; set; }
 
-        // Navigation properties
+        // Navigation properties, these are 
         public virtual ICollection<StewardLicense> StewardLicenses { get; set; }
 
     }
