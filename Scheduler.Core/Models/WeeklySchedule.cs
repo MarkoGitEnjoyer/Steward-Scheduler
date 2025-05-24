@@ -32,34 +32,61 @@ namespace Scheduler.Core.Models
         }
 
         #region Hour Management Methods
-        /// <summary>
-        /// add hours to a steward's schedule
-        /// </summary>
-        public bool AddStewardHours(int stewardId, float hours)
-        {
-            if (!StewardHours.ContainsKey(stewardId))
-            {
-                StewardHours[stewardId] = 0;
-            }
 
-            StewardHours[stewardId] += hours;
-            return true;
+        /// <summary>
+        /// cleanup whole assignment from stewards
+        /// </summary>
+        public void CleanupFailedAssignment(FlightAssignment flightAssignment)
+        {
+            foreach (var steward in flightAssignment.BusinessStewards.Concat(flightAssignment.EconomyStewards))
+            {
+                RemoveFlightFromStewardSchedule(steward.StewardId, flightAssignment.Flight);
+            }
+        }
+        /// <summary>
+        /// helper method to add flight to steward's schedule
+        /// </summary>
+        public void AddFlightToStewardSchedule(int stewardId, FlightDto flight)
+        {
+            if (!StewardSchedules.ContainsKey(stewardId))
+                StewardSchedules[stewardId] = new List<FlightDto>();
+
+            StewardSchedules[stewardId].Add(flight);
+
+            // Update hours
+            if (!StewardHours.ContainsKey(stewardId))
+                StewardHours[stewardId] = 0;
+
+            StewardHours[stewardId] += flight.FlightTime;
         }
 
         /// <summary>
-        /// remove hours from a steward's schedule
+        /// helper method to remove flight from steward's schedule
         /// </summary>
-        public void RemoveStewardHours(int stewardId, float hours)
+        public void RemoveFlightFromStewardSchedule(int stewardId, FlightDto flight)
         {
-            if (StewardHours.ContainsKey(stewardId))
+            if (StewardSchedules.ContainsKey(stewardId))
             {
-                StewardHours[stewardId] -= hours;
-                if (StewardHours[stewardId] < 0)
+                // get flights from steward schedule
+                var flights = StewardSchedules[stewardId];
+                // flight we need to remove
+                var flightToRemove = flights.FirstOrDefault(f => f.FlightId == flight.FlightId);
+
+                if (flightToRemove != null)
                 {
-                    StewardHours[stewardId] = 0;
+                    flights.Remove(flightToRemove);
+
+                    // update hours
+                    if (StewardHours.ContainsKey(stewardId))
+                    {
+                        StewardHours[stewardId] -= flight.FlightTime;
+                        if (StewardHours[stewardId] < 0)
+                            StewardHours[stewardId] = 0;
+                    }
                 }
             }
         }
+
 
         /// <summary>
         /// get a steward's current scheduled hours

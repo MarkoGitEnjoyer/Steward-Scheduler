@@ -80,8 +80,6 @@ namespace Scheduler.Core.Algorithms
         {
             // creating new flight assignment and inserting flight
             var flightAssignment = new FlightAssignment { Flight = flight };
-            // getting flight time from flight
-            float flightTime = flight.FlightTime;
 
             // First, assign a senior steward (required for every flight)
             bool assignedSenior = AssignSeniorSteward(
@@ -90,8 +88,7 @@ namespace Scheduler.Core.Algorithms
                 stewardGroups["Senior"],
                 schedule,
                 weights,
-                averageMonthlyHours,
-                flightTime);
+                averageMonthlyHours);
 
             if (!assignedSenior)
             {
@@ -107,8 +104,7 @@ namespace Scheduler.Core.Algorithms
                 stewardGroups["Business"],
                 schedule,
                 weights,
-                averageMonthlyHours,
-                flightTime);
+                averageMonthlyHours);
 
             // assign economy class stewards
             AssignEconomyStewards(
@@ -117,8 +113,7 @@ namespace Scheduler.Core.Algorithms
                 stewardGroups["Economy"],
                 schedule,
                 weights,
-                averageMonthlyHours,
-                flightTime);
+                averageMonthlyHours);
 
             // determine if the flight should be scheduled
             bool shouldSchedule = flightAssignment.IsComplete();
@@ -132,24 +127,11 @@ namespace Scheduler.Core.Algorithms
             {
                 schedule.LogFlightUnscheduled(flight, flightAssignment);
                 // remove this flight's hours from the stewards 
-                CleanupFailedAssignment(flightAssignment, schedule, flightTime);
+                schedule.CleanupFailedAssignment(flightAssignment);
             }
         }
 
-        private void CleanupFailedAssignment(FlightAssignment flightAssignment, WeeklySchedule schedule, float flightTime)
-        {
-            foreach (var steward in flightAssignment.BusinessStewards.Concat(flightAssignment.EconomyStewards))
-            {
-                // remove hours from schedule tracking
-                schedule.RemoveStewardHours(steward.StewardId, flightTime);
-
-                // clean up schedule
-                if (schedule.StewardSchedules.ContainsKey(steward.StewardId))
-                {
-                    schedule.StewardSchedules[steward.StewardId].Remove(flightAssignment.Flight);
-                }
-            }
-        }
+       
 
         #endregion
 
@@ -161,8 +143,7 @@ namespace Scheduler.Core.Algorithms
             List<StewardDto> seniorStewards,
             WeeklySchedule schedule,
             SchedulingWeights weights,
-            float averageMonthlyHours,
-            float flightTime)
+            float averageMonthlyHours)
         {
             // calculate scores for senior stewards with enhanced scoring system
             var eligibleSeniorStewards = seniorStewards
@@ -183,7 +164,7 @@ namespace Scheduler.Core.Algorithms
                 flightAssignment.BusinessStewards.Add(bestSenior);
 
                 // Update tracking
-                UpdateStewardAssignment(bestSenior, flight, schedule, flightTime);
+                schedule.AddFlightToStewardSchedule(bestSenior.StewardId, flightAssignment.Flight);
                 return true;
             }
 
@@ -196,8 +177,7 @@ namespace Scheduler.Core.Algorithms
             List<StewardDto> businessStewards,
             WeeklySchedule schedule,
             SchedulingWeights weights,
-            float averageMonthlyHours,
-            float flightTime)
+            float averageMonthlyHours)
         {
             int remainingBusiness = flight.RequiredBusinessCrew - flightAssignment.BusinessStewards.Count;
 
@@ -218,7 +198,7 @@ namespace Scheduler.Core.Algorithms
                 foreach (var stewardInfo in availableBusinessStewards)
                 {
                     flightAssignment.BusinessStewards.Add(stewardInfo.Steward);
-                    UpdateStewardAssignment(stewardInfo.Steward, flight, schedule, flightTime);
+                    schedule.AddFlightToStewardSchedule(stewardInfo.Steward.StewardId, flightAssignment.Flight);
                 }
             }
         }
@@ -229,8 +209,7 @@ namespace Scheduler.Core.Algorithms
             List<StewardDto> economyStewards,
             WeeklySchedule schedule,
             SchedulingWeights weights,
-            float averageMonthlyHours,
-            float flightTime)
+            float averageMonthlyHours)
         {
             // only consider stewards who won't exceed 90 hours
             var availableEconomyStewards = economyStewards
@@ -247,20 +226,8 @@ namespace Scheduler.Core.Algorithms
             foreach (var stewardInfo in availableEconomyStewards)
             {
                 flightAssignment.EconomyStewards.Add(stewardInfo.Steward);
-                UpdateStewardAssignment(stewardInfo.Steward, flight, schedule, flightTime);
+                schedule.AddFlightToStewardSchedule(stewardInfo.Steward.StewardId, flightAssignment.Flight);
             }
-        }
-
-        private void UpdateStewardAssignment(StewardDto steward, FlightDto flight, WeeklySchedule schedule, float flightTime)
-        {
-            // add to steward's schedule
-            if (!schedule.StewardSchedules.ContainsKey(steward.StewardId))
-                schedule.StewardSchedules[steward.StewardId] = new List<FlightDto>();
-
-            schedule.StewardSchedules[steward.StewardId].Add(flight);
-
-            // track steward hours in schedule
-            schedule.AddStewardHours(steward.StewardId, flightTime);
         }
 
         #endregion
@@ -270,35 +237,29 @@ namespace Scheduler.Core.Algorithms
         // calculate steward score for flight assignment
         private float CalculateStewardScore(StewardDto steward, WeeklySchedule schedule, FlightDto flight, SchedulingWeights weights, float averageMonthlyHours)
         {
-            // Load all scores
+            // experience and feedbacks are one variable
             float experienceScore = Math.Min(1.0f, steward.ExperienceYears / 10.0f);
             float feedbackScore = Math.Min(1.0f, Math.Max(0.0f, steward.FeedbackScore / 5.0f));
-            float workloadScore = CalculateWorkloadForStewad(steward, averageMonthlyHours, schedule);
-            float languageScore = steward.DoesSpeakLanguage(flight.RequiredLanguageId) ? 1.0f : 0.0f;
+            float qualityScore = (experienceScore + feedbackScore) / 2.0f;
 
-            // calculate by using weights
-            float qualityScore = weights.ExperienceWeight * experienceScore +
-                                 weights.FeedbackWeight * feedbackScore +
-                                 weights.WorkloadBalanceWeight * workloadScore +
-                                 weights.LanguageWeight * languageScore;
+            // flight priority from 0.2 to 1
+            float priorityFactor = Math.Clamp(flight.Priority / 5.0f, 0.0f, 1.0f);
 
-            //getting priority factor from 0.2 to 1
-            float priorityFactor = flight.Priority / 5.0f;
-
-            // calculating how much quality of steward matches the flight
+            // matchfactor shows how quality of steward matches flight
             float matchFactor = 1.0f - Math.Abs(qualityScore - priorityFactor);
 
-            // the minimum score we would apply bonus
-            float matchBonusThreshold = 0.6f;
+            // other factors
+            float languageScore = steward.DoesSpeakLanguage(flight.RequiredLanguageId) ? 1.0f : 0.0f;
+            float workloadScore = CalculateWorkloadForStewad(steward, averageMonthlyHours, schedule);
 
-            // the quadratic root exponent to apply bonus
-            float matchScoreExponent = 0.5f;
-
-            // applying bonus if score is higher than the limit
-            float finalScore = matchFactor > matchBonusThreshold ? (float)Math.Pow(matchFactor, matchScoreExponent) : matchFactor;
+            float finalScore =
+                (weights.ExperienceWeight + weights.FeedbackWeight) * matchFactor + 
+                weights.LanguageWeight * languageScore +
+                weights.WorkloadBalanceWeight * workloadScore;
 
             return Math.Clamp(finalScore, 0.0f, 1.0f);
         }
+
 
         // function to calculate score for workload based on avg month hours
         private float CalculateWorkloadForStewad(StewardDto steward, float averageMonthlyHours, WeeklySchedule schedule)

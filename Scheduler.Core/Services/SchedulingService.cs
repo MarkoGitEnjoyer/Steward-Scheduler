@@ -259,24 +259,9 @@ namespace Scheduler.Core.Services
                     }
 
                     // update steward's schedule
-                    UpdateStewardScheduleInformation(steward, flight, schedule);
+                    schedule.AddFlightToStewardSchedule(steward.StewardId, flight);
                 }
             }
-        }
-
-        private void UpdateStewardScheduleInformation(
-            StewardDto steward,
-            FlightDto flight,
-            WeeklySchedule schedule)
-        {
-            // add to steward's schedule
-            if (!schedule.StewardSchedules.ContainsKey(steward.StewardId))
-                schedule.StewardSchedules[steward.StewardId] = new List<FlightDto>();
-
-            schedule.StewardSchedules[steward.StewardId].Add(flight);
-
-            // add flight hours to schedule tracking
-            schedule.AddStewardHours(steward.StewardId, flight.FlightTime);
         }
 
         // get a steward's schedule for a specific week

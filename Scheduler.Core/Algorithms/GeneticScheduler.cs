@@ -508,17 +508,7 @@ namespace Scheduler.Core.Algorithms
                 // add steward to assignment
                 targetStewards.Add(steward);
 
-                // track in child's schedule
-                if (!child.StewardSchedules.ContainsKey(steward.StewardId))
-                    child.StewardSchedules[steward.StewardId] = new List<FlightDto>();
-
-                child.StewardSchedules[steward.StewardId].Add(flight);
-
-                // update steward hours
-                if (!child.StewardHours.ContainsKey(steward.StewardId))
-                    child.StewardHours[steward.StewardId] = 0;
-
-                child.StewardHours[steward.StewardId] += flight.FlightTime;
+                child.AddFlightToStewardSchedule(steward.StewardId, flight);
             }
             return true;
         }
@@ -688,14 +678,14 @@ namespace Scheduler.Core.Algorithms
                 flight1.BusinessStewards.RemoveAt(steward1Idx);
                 flight2.BusinessStewards.RemoveAt(steward2Idx);
                 // remove from schedule tracking
-                RemoveFlightFromStewardSchedule(schedule, steward1.StewardId, flight1.Flight);
-                RemoveFlightFromStewardSchedule(schedule, steward2.StewardId, flight2.Flight);
+                schedule.RemoveFlightFromStewardSchedule(steward1.StewardId, flight1.Flight);
+                schedule.RemoveFlightFromStewardSchedule(steward2.StewardId, flight2.Flight);
 
                 flight1.BusinessStewards.Add(steward2);
                 flight2.BusinessStewards.Add(steward1);
                 // update schedule tracking
-                AddFlightToStewardSchedule(schedule, steward2.StewardId, flight1.Flight);
-                AddFlightToStewardSchedule(schedule, steward1.StewardId, flight2.Flight);
+                schedule.AddFlightToStewardSchedule(steward2.StewardId, flight1.Flight);
+                schedule.AddFlightToStewardSchedule(steward1.StewardId, flight2.Flight);
 
                 return true;
             }
@@ -729,14 +719,14 @@ namespace Scheduler.Core.Algorithms
                 flight1.EconomyStewards.RemoveAt(steward1Idx);
                 flight2.EconomyStewards.RemoveAt(steward2Idx);
                 // remove from schedule tracking
-                RemoveFlightFromStewardSchedule(schedule, steward1.StewardId, flight1.Flight);
-                RemoveFlightFromStewardSchedule(schedule, steward2.StewardId, flight2.Flight);
+                schedule.RemoveFlightFromStewardSchedule(steward1.StewardId, flight1.Flight);
+                schedule.RemoveFlightFromStewardSchedule(steward2.StewardId, flight2.Flight);
 
                 flight1.EconomyStewards.Add(steward2);
                 flight2.EconomyStewards.Add(steward1);
                 // update schedule tracking
-                AddFlightToStewardSchedule(schedule, steward2.StewardId, flight1.Flight);
-                AddFlightToStewardSchedule(schedule, steward1.StewardId, flight2.Flight);
+                schedule.AddFlightToStewardSchedule(steward2.StewardId, flight1.Flight);
+                schedule.AddFlightToStewardSchedule(steward1.StewardId, flight2.Flight);
 
                 return true;
             }
@@ -822,10 +812,10 @@ namespace Scheduler.Core.Algorithms
 
                 // replace in the flight assignment
                 flightAssignment.BusinessStewards.Remove(stewardToReplace);
-                RemoveFlightFromStewardSchedule(schedule, stewardToReplace.StewardId, flightAssignment.Flight);
+                schedule.RemoveFlightFromStewardSchedule(stewardToReplace.StewardId, flightAssignment.Flight);
 
                 flightAssignment.BusinessStewards.Add(replacement);
-                AddFlightToStewardSchedule(schedule, replacement.StewardId, flightAssignment.Flight);
+                schedule.AddFlightToStewardSchedule(replacement.StewardId, flightAssignment.Flight);
 
                 return true;
             }
@@ -860,10 +850,10 @@ namespace Scheduler.Core.Algorithms
 
                 // replace in the flight assignment
                 flightAssignment.EconomyStewards.Remove(stewardToReplace);
-                RemoveFlightFromStewardSchedule(schedule, stewardToReplace.StewardId, flightAssignment.Flight);
+                schedule.RemoveFlightFromStewardSchedule(stewardToReplace.StewardId, flightAssignment.Flight);
 
                 flightAssignment.EconomyStewards.Add(replacement);
-                AddFlightToStewardSchedule(schedule, replacement.StewardId, flightAssignment.Flight);
+                schedule.AddFlightToStewardSchedule(replacement.StewardId, flightAssignment.Flight);
 
                 return true;
             }
@@ -1049,6 +1039,7 @@ namespace Scheduler.Core.Algorithms
             if (flightIndex >= 0)
             {
                 schedule.FlightAssignments.RemoveAt(flightIndex);
+                schedule.CleanupFailedAssignment(flightToRemove);
             }
         }
 
@@ -1200,45 +1191,7 @@ namespace Scheduler.Core.Algorithms
 
             return copies;
         }
-        // helper method to add flight to steward's schedule
-        private void AddFlightToStewardSchedule(WeeklySchedule schedule, int stewardId, FlightDto flight)
-        {
-            if (!schedule.StewardSchedules.ContainsKey(stewardId))
-                schedule.StewardSchedules[stewardId] = new List<FlightDto>();
-
-            schedule.StewardSchedules[stewardId].Add(flight);
-
-            // Update hours
-            if (!schedule.StewardHours.ContainsKey(stewardId))
-                schedule.StewardHours[stewardId] = 0;
-
-            schedule.StewardHours[stewardId] += flight.FlightTime;
-        }
-
-        // helper method to remove flight from steward's schedule
-        private void RemoveFlightFromStewardSchedule(WeeklySchedule schedule, int stewardId, FlightDto flight)
-        {
-            if (schedule.StewardSchedules.ContainsKey(stewardId))
-            {
-                // get flights from steward schedule
-                var flights = schedule.StewardSchedules[stewardId];
-                // flight we need to remove
-                var flightToRemove = flights.FirstOrDefault(f => f.FlightId == flight.FlightId);
-
-                if (flightToRemove != null)
-                {
-                    flights.Remove(flightToRemove);
-
-                    // update hours
-                    if (schedule.StewardHours.ContainsKey(stewardId))
-                    {
-                        schedule.StewardHours[stewardId] -= flight.FlightTime;
-                        if (schedule.StewardHours[stewardId] < 0)
-                            schedule.StewardHours[stewardId] = 0;
-                    }
-                }
-            }
-        }
+        
         #endregion
     }
 }

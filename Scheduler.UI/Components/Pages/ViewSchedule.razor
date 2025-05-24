@@ -395,26 +395,26 @@
         selectedDay = model.WeekStart;
     }
 
-    private void PreviousWeek()
+    private async void PreviousWeek()
     {
         selectedDate = selectedDate.AddDays(-7);
         selectedDay = selectedDate;
-        LoadSchedule();
+        await LoadSchedule();
     }
 
-    private void CurrentWeek()
+    private async void CurrentWeek()
     {
         selectedDate = new DateTime(2025, 2, 17);
         AdjustSelectedDateToMonday();
         selectedDay = selectedDate;
-        LoadSchedule();
+        await LoadSchedule();
     }
 
-    private void NextWeek()
+    private async void NextWeek()
     {
         selectedDate = selectedDate.AddDays(7);
         selectedDay = selectedDate;
-        LoadSchedule();
+        await LoadSchedule();
     }
 
     private void SelectDay(int dayIndex)
